@@ -197,6 +197,160 @@ derivation without enumerating them. That is why the puzzle matters. A machine
 can follow the rules forever, while a suitable external description can prove
 in a few lines that the requested destination is unreachable.
 
+## Algorithmic considerations for problem solving
+
+MIU can be treated as a graph-search problem:
+
+- a **state** is a valid MIU string;
+- a directed **edge** is one legal rule application at one specific position;
+- the axiom `MI` is the start node; and
+- a requested theorem, such as `MUI` or `MU`, is a goal node.
+
+This graph is infinite. Rule 2 can repeatedly double a string, rules may lead
+back to previously seen strings, and the number of possible states grows
+quickly. The fact that every individual move is easy to compute does not make
+global reachability easy to decide by search.
+
+### Prove cheap necessary conditions before searching
+
+The most valuable algorithmic step is often a meta-level precheck. Every string
+derived from `MI` has at least these properties:
+
+- it begins with exactly one `M`;
+- no rule introduces another `M`; and
+- its number of `I` symbols is never divisible by three.
+
+These are **necessary**, not generally sufficient, conditions. They can reject
+some targets immediately, but passing them does not automatically provide a
+derivation.
+
+For `MU`, the modulo-three test settles the problem without search: zero `I`
+symbols is impossible. For `MUI`, the test allows search because one `I` is in
+a reachable residue class, and a short derivation exists:
+
+```text
+MI → MII → MIIII → MUI
+     R2     R2       R3
+```
+
+This suggests a general workflow:
+
+1. validate the target's syntax;
+2. apply known invariants and reject impossible targets;
+3. search only when the target survives those checks; and
+4. retain the derivation as a verifiable witness when search succeeds.
+
+Failure to find a path within a budget is not a proof of impossibility. A
+failed search and an invariant proof are different kinds of result.
+
+### Why naive search performs badly
+
+Different standard search methods encounter different problems:
+
+| Method | Advantage | MIU difficulty |
+|---|---|---|
+| Depth-first search | Very small memory use | Can disappear forever down a Rule 2 growth branch. |
+| Breadth-first search | Finds a shortest derivation under unit edge cost | The frontier and stored strings grow rapidly. |
+| Iterative deepening | Bounded memory with increasing depth | Repeats work and still needs a practical length bound. |
+| Beam search | Keeps only the most promising states | Fast, but can discard the only productive growth path. |
+| A* search | Can prioritize states with a heuristic | A useful admissible distance-to-goal heuristic is not obvious. |
+
+Backward search is not automatically easier. Reversing Rule 3 means replacing
+a `U` with `III`; reversing Rule 4 means inserting `UU` at possible positions.
+These inverse operations create many possible predecessors, including longer
+ones, so an unrestricted reverse graph also expands quickly.
+
+### Productive growth versus blind growth
+
+“Always choose the shortest result” is not a sufficient strategy. Some growth
+is required to create patterns that later rules can contract. The derivation
+of `MUI` demonstrates this:
+
+- `MI → MII → MIIII` grows the string;
+- that growth creates an `III`; and
+- Rule 3 then contracts `MIIII → MUI`.
+
+The useful distinction is therefore not simply **shorter versus longer**, but
+**productive growth versus blind growth**.
+
+The canonical blind-growth trap is:
+
+```text
+MIU → MIUIU → MIUIUIUIU → …
+```
+
+Once the tail is the alternating pattern `IU`, Rule 2 is the only applicable
+rule. Duplicating that tail preserves the pattern, so no `III` or `UU` can ever
+appear. The strings grow forever without opening a contraction.
+
+A productive growth move, by contrast, creates or approaches one of the
+patterns needed by Rules 3 and 4. For example, duplicating `MII` produces
+`MIIII`, which immediately exposes two occurrences of `III`.
+
+### The algorithm used by MIU × Jev
+
+The app is an **online guided graph walk**, not an exhaustive theorem prover.
+At each step it:
+
+```text
+legal = enumerate_every_legal_application(current)
+probabilities = decision_model(current, target, history, legal)
+chosen = apply_policy(probabilities, legal, history)
+current = apply(chosen)
+```
+
+The default guided policy applies the following priorities:
+
+1. choose the target immediately if it is a legal successor;
+2. if a shortening move exists, choose among shortening moves;
+3. avoid already visited states when a novel candidate exists;
+4. reward states containing `III` or `UU`, because they permit contraction;
+5. penalize doubling that creates no concrete rewrite opportunity;
+6. reject known growth-only traps when a productive alternative exists; and
+7. combine those heuristic scores with the model's probabilities.
+
+This division of labor is deliberate:
+
+- the deterministic engine guarantees **soundness**—every applied edge belongs
+  to the MIU graph;
+- the decision model contributes contextual ranking among legal alternatives;
+  and
+- the heuristics provide search control the model may not infer reliably from
+  a local menu.
+
+The guided policy is not complete. It may miss a derivation that requires a
+temporarily unattractive state, and its reduction-first preference is not an
+admissible shortest-path heuristic. The **Model only** mode is even less
+controlled: it is useful for observing the provider, not for claiming a
+systematic solver.
+
+### Budgets, cycles, and resource bounds
+
+Any practical traversal needs limits because the formal graph is unbounded.
+The app tracks visited states and places budgets on:
+
+- the number of automatic steps;
+- the length of the next string; and
+- the absolute string size accepted by the server.
+
+These limits protect memory, rendering, request size, and model context. They
+do not change which rewrites are formally legal. A budget-exhausted run means
+“not found under these resources,” never “mathematically impossible.”
+
+For a more complete bounded solver, a natural next step would be breadth-first
+or iterative-deepening graph search with:
+
+- a visited-state set;
+- explicit maximum depth and string length;
+- invariant-based pruning before expansion;
+- parent pointers for reconstructing a proof; and
+- separate outcomes for **found**, **excluded by invariant**, and
+  **not found within bounds**.
+
+That distinction—between a derivation, a proof of impossibility, and an
+inconclusive bounded search—is the central algorithmic lesson of the MIU
+puzzle.
+
 ## Why add Jev?
 
 System One decision models such as Jev and Nimble do not need to generate
@@ -392,7 +546,7 @@ search heuristics:
 2. when any legal move shortens the string, choose among shortening moves;
 3. prefer novel states over already visited states;
 4. reward results that expose `III` or `UU` contractions; and
-5. penalize Rule 2 doubling when it creates no concrete contraction; and
+5. penalize Rule 2 doubling when it creates no concrete contraction;
 6. avoid **growth-only traps** such as `MIU → MIUIU → MIUIUIUIU → …`, where
    Rule 2 remains the only move and no `III` or `UU` can ever appear.
 
