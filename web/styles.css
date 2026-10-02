@@ -296,10 +296,10 @@ h2 { margin: 5px 0 0; font-size: 1rem; }
 .run-notice {
   margin-top: 14px;
   padding: 12px;
-  border: 1px solid rgba(200, 255, 77, 0.35);
+  border: 1px solid rgba(255, 107, 107, 0.5);
   border-radius: 8px;
-  background: rgba(200, 255, 77, 0.06);
-  color: #e4f5b9;
+  background: rgba(255, 107, 107, 0.08);
+  color: #ffb2b2;
   font-size: 0.84rem;
 }
 
