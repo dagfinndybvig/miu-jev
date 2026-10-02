@@ -25,6 +25,7 @@ const JOURNAL_KEY = "miu-decision-journal-v1";
 const EXAMPLES = {
   miu: { title: "MIU", initial: "MI", goal: "MU", limit: SERVER_MAX_LENGTH },
   algebra: { title: "Algebra", initial: "2 * (x + 3) = 14", goal: "Isolate x", limit: 512 },
+  lambda: { title: "Lambda", initial: "(\\x. x x) (\\y. y)", goal: "Normal form", limit: 512 },
 };
 
 const $ = (id) => document.getElementById(id);
@@ -73,6 +74,8 @@ const elements = {
   resumeApp: $("resumeApp"),
   launchAlgebra: $("launchAlgebra"),
   launchMiu: $("launchMiu"),
+  launchLambda: $("launchLambda"),
+  equationLabel: $("equationLabel"),
   landingNotice: $("landingNotice"),
   appStage: $("appStage"),
   appWorkspace: $("appWorkspace"),
@@ -84,15 +87,15 @@ const elements = {
 const APP_VIEWS = [elements.appStage, elements.appWorkspace, elements.appJournal, elements.appSettings];
 
 function goalValue() {
-  return state.system === "algebra" ? EXAMPLES.algebra.goal : elements.goal.value.trim().toUpperCase();
+  return state.system === "miu" ? elements.goal.value.trim().toUpperCase() : EXAMPLES[state.system].goal;
 }
 
 function goalReached() {
-  return state.system === "algebra" ? Boolean(state.analysis?.solved) : state.current === goalValue();
+  return state.system === "miu" ? state.current === goalValue() : Boolean(state.analysis?.solved);
 }
 
 function progressDistance() {
-  return state.system === "algebra" ? state.analysis.progress : targetDistance(state.current, goalValue());
+  return state.system === "miu" ? targetDistance(state.current, goalValue()) : state.analysis.progress;
 }
 
 function validMiu(value) {
@@ -297,6 +300,16 @@ function exportJournal() {
 }
 
 function updateInvariantNotice() {
+  if (state.system === "lambda") {
+    const status = state.analysis?.solved
+      ? "Normal form: no beta redexes remain in the term."
+      : "Each offered step is a single capture-avoiding beta contraction; the menu lists every redex.";
+    const omitted = state.analysis?.omitted_for_limits || 0;
+    elements.invariantNotice.textContent = `${status} Normalization is undecidable in ` +
+      `general, so budget stops are inconclusive rather than proofs.` +
+      (omitted ? ` ${omitted} contractions exceed the representation limits and are not offered.` : "");
+    return;
+  }
   if (state.system === "algebra") {
     const status = state.analysis?.solved
       ? state.analysis.solution_kind === "all"
@@ -344,16 +357,16 @@ function setBusy(busy) {
   state.busy = busy;
   elements.thinking.classList.toggle("hidden", !busy);
   const unavailable = !state.providers[elements.provider.value]?.available;
-  const solvedAlgebra = state.system === "algebra" && goalReached();
-  elements.jevStep.disabled = busy || state.auto || unavailable || solvedAlgebra || state.moves.length === 0;
+  const solvedState = state.system !== "miu" && goalReached();
+  elements.jevStep.disabled = busy || state.auto || unavailable || solvedState || state.moves.length === 0;
   elements.launchAlgebra.disabled = busy || state.auto;
   elements.launchMiu.disabled = busy || state.auto;
   elements.chooseApp.disabled = busy || state.auto;
-  elements.autoRun.disabled = !state.auto && (busy || unavailable || solvedAlgebra || state.moves.length === 0);
+  elements.autoRun.disabled = !state.auto && (busy || unavailable || solvedState || state.moves.length === 0);
   elements.undo.disabled = busy || state.auto || state.history.length <= 1;
   elements.reset.disabled = busy;
   elements.clearLog.disabled = busy || state.auto;
-  elements.goal.disabled = busy || state.auto || state.system === "algebra";
+  elements.goal.disabled = busy || state.auto || state.system !== "miu";
   elements.example.disabled = busy || state.auto;
   elements.equation.disabled = busy || state.auto;
   elements.loadEquation.disabled = busy || state.auto;
@@ -370,19 +383,22 @@ function setBusy(busy) {
 }
 
 function render() {
-  const algebraMode = state.system === "algebra";
+  const structuredMode = state.system !== "miu";
   elements.landing.classList.toggle("hidden", !state.onLanding);
   for (const view of APP_VIEWS) view.classList.toggle("hidden", state.onLanding);
   elements.landingResume.classList.toggle("hidden", !(state.launched && state.onLanding));
   elements.example.value = state.system;
   elements.exampleTitle.textContent = state.onLanding ? "Formalism" : EXAMPLES[state.system].title;
-  elements.currentLabel.textContent = algebraMode ? "CURRENT EQUATION" : "CURRENT STRING";
-  elements.metricLabel.textContent = algebraMode ? "PROGRESS COST" : "#I MOD 3";
-  elements.equationEditor.classList.toggle("hidden", !algebraMode);
-  elements.exploreSetting.classList.toggle("hidden", algebraMode);
+  elements.currentLabel.textContent = state.system === "algebra" ? "CURRENT EQUATION"
+    : state.system === "lambda" ? "CURRENT TERM" : "CURRENT STRING";
+  elements.equationLabel.textContent = state.system === "lambda" ? "STARTING TERM" : "STARTING EQUATION";
+  elements.metricLabel.textContent = state.system === "algebra" ? "PROGRESS COST"
+    : state.system === "lambda" ? "REDEXES" : "#I MOD 3";
+  elements.equationEditor.classList.toggle("hidden", !structuredMode);
+  elements.exploreSetting.classList.toggle("hidden", structuredMode);
   elements.maxLength.max = EXAMPLES[state.system].limit;
   elements.rules.replaceChildren();
-  const rules = algebraMode ? state.analysis?.rules || [] :
+  const rules = structuredMode ? state.analysis?.rules || [] :
     ["1: xI → xIU", "2: Mx → Mxx", "3: xIIIy → xUy", "4: xUUy → xy"];
   for (const rule of rules) {
     const item = document.createElement("span");
@@ -394,7 +410,8 @@ function render() {
   elements.stepCount.textContent = state.history.length - 1;
   elements.lengthCount.textContent = state.current.length;
   elements.moveCount.textContent = state.moves.length;
-  elements.iModulo.textContent = algebraMode ? state.analysis?.progress ?? "—" :
+  elements.iModulo.textContent = state.system === "algebra" ? state.analysis?.progress ?? "—"
+    : state.system === "lambda" ? state.analysis?.redexes ?? "—" :
     [...state.current].filter((char) => char === "I").length % 3;
   elements.autoRun.textContent = state.auto ? "Stop auto-run" : "Auto-run";
   elements.autoRun.classList.toggle("primary", state.auto);
@@ -454,7 +471,7 @@ async function refreshMoves() {
   const payload = await api("/api/moves", { system, current: state.current });
   if (revision !== state.revision || request !== state.movesRequest || system !== state.system) return false;
   state.moves = payload.moves;
-  state.analysis = system === "algebra" ? payload : null;
+  state.analysis = system === "miu" ? null : payload;
   state.movesRevision = revision;
   render();
   return true;
@@ -488,11 +505,11 @@ async function loadExample(system, equation = EXAMPLES[system]?.initial) {
     state.movesRequest += 1;
     state.moves = payload.moves;
     state.movesRevision = state.revision;
-    state.analysis = system === "algebra" ? payload : null;
+    state.analysis = system === "miu" ? null : payload;
     state.probabilities = {};
     state.selectedId = null;
     elements.goal.value = EXAMPLES[system].goal;
-    elements.equation.value = system === "algebra" ? initial : EXAMPLES.algebra.initial;
+    elements.equation.value = system === "miu" ? EXAMPLES.algebra.initial : initial;
     elements.maxLength.value = Math.max(8, Math.min(EXAMPLES[system].limit, Number(elements.maxLength.value) || 64));
     setRunNotice();
     return true;
@@ -562,7 +579,7 @@ async function applyMove(move, source = "Manual choice", decision = null) {
 async function jevStep(runId = null) {
   const autoMode = runId !== null;
   if (state.busy || !state.moves.length || (state.auto && !autoMode)) return false;
-  if (state.system === "algebra" && goalReached()) return false;
+  if (state.system !== "miu" && goalReached()) return false;
   if (!state.providers[elements.provider.value]?.available) {
     updateEngineStatus();
     return false;
@@ -602,7 +619,7 @@ async function jevStep(runId = null) {
       return false;
     }
     state.moves = payload.moves;
-    if (state.system === "algebra") state.analysis = payload.analysis;
+    if (state.system !== "miu") state.analysis = payload.analysis;
     state.movesRevision = requestedRevision;
     state.selectedId = payload.move.id;
     state.probabilities = payload.rounds.length === 1 && payload.rounds[0].groups.length === 1
@@ -668,7 +685,7 @@ async function autoRun() {
     return;
   }
   if (!state.providers[elements.provider.value]?.available || !state.moves.length) return;
-  if (state.system === "algebra" && goalReached()) return;
+  if (state.system !== "miu" && goalReached()) return;
   state.auto = true;
   const runId = ++state.autoRunId;
   setError();
@@ -795,6 +812,7 @@ async function launchApp(system) {
 
 elements.launchAlgebra.addEventListener("click", () => launchApp("algebra"));
 elements.launchMiu.addEventListener("click", () => launchApp("miu"));
+elements.launchLambda.addEventListener("click", () => launchApp("lambda"));
 elements.chooseApp.addEventListener("click", showLanding);
 elements.resumeApp.addEventListener("click", resumeCurrentApp);
 elements.jevStep.addEventListener("click", () => jevStep());

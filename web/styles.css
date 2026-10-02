@@ -329,7 +329,7 @@ h2 { margin: 5px 0 0; font-size: 1rem; }
   letter-spacing: -0.05em;
 }
 .landing-lead { margin: 14px 0 24px; max-width: 72ch; color: var(--muted); line-height: 1.55; }
-.landing-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.landing-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
 .landing-card { display: grid; gap: 12px; align-content: start; padding: 22px; text-align: left; background: #0f1115; }
 .landing-card.primary { border-color: var(--acid); }
 .landing-card.primary .landing-kicker { color: var(--acid); }
@@ -358,4 +358,5 @@ h2 { margin: 5px 0 0; font-size: 1rem; }
   .metrics div:nth-child(-n+2) { padding-bottom: 14px; border-bottom: 1px solid var(--line); }
   .metrics div:nth-child(n+3) { padding-top: 14px; }
   .settings-grid { grid-template-columns: 1fr; }
+  .landing-cards { grid-template-columns: 1fr; }
 }

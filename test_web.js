@@ -52,6 +52,30 @@ function algebraState(value) {
   };
 }
 
+function lambdaState(value) {
+  const aliases = { "(\\x. x x) (\\y. y)": "(λx.x x) (λy.y)" };
+  const current = aliases[value] || value;
+  const fixtures = {
+    "(λx.x x) (λy.y)": { redexes: 1, next: [[1, "(λy.y) (λy.y)"]] },
+    "(λy.y) (λy.y)": { redexes: 1, next: [[1, "λy.y"]] },
+    "λy.y": { redexes: 0, next: [] },
+  };
+  const fixture = fixtures[current];
+  assert.ok(fixture, `Missing lambda fixture for ${current}`);
+  return {
+    system: "lambda", current, redexes: fixture.redexes,
+    progress: 4 + 2 * fixture.redexes, solved: fixture.redexes === 0,
+    solution_kind: fixture.redexes === 0 ? "normal" : "reducible", omitted_for_limits: 0,
+    rules: ["1: Beta-reduce the redex at a marked position"],
+    moves: fixture.next.map(([rule, result], index) => ({
+      id: `move-${index}`, rule, result, position: "root", label: "Beta at root",
+      detail: "Exact capture-avoiding beta contraction",
+      solved: result === "λy.y", progress: 4, redexes: result === "λy.y" ? 0 : 1,
+      duplication: 0,
+    })),
+  };
+}
+
 function element() {
   const classes = new Set();
   const listeners = new Map();
@@ -131,6 +155,7 @@ async function createApp(healthProviders = providers, storage = new Map()) {
       const request = requests.shift();
       assert.equal(request.url, "/api/moves");
       request.respond(request.body.system === "algebra" ? algebraState(request.body.current) :
+        request.body.system === "lambda" ? lambdaState(request.body.current) :
         { system: "miu", current: request.body.current, moves: legalMenu(request.body.current) });
       await settle();
     },
@@ -144,6 +169,7 @@ async function createApp(healthProviders = providers, storage = new Map()) {
       const request = requests.shift();
       assert.equal(request.url, "/api/choose");
       const snapshot = request.body.system === "algebra" ? algebraState(request.body.current) :
+        request.body.system === "lambda" ? lambdaState(request.body.current) :
         { system: "miu", current: request.body.current, moves: legalMenu(request.body.current) };
       const { moves, ...analysis } = snapshot;
       request.respond({
@@ -196,6 +222,28 @@ test("landing page launches MIU as the historical inspiration", async () => {
   assert.ok(app.nodes.get("landing").classList.contains("hidden"));
   assert.ok(!app.nodes.get("appJournal").classList.contains("hidden"));
   assert.equal(app.nodes.get("exampleTitle").textContent, "MIU");
+});
+
+test("landing page launches lambda and reaches a normal form", async () => {
+  const app = await createApp();
+  app.nodes.get("launchLambda").click();
+  await app.movesResponse();
+  assert.equal(app.state.system, "lambda");
+  assert.equal(app.state.current, "(λx.x x) (λy.y)");
+  assert.equal(app.nodes.get("currentLabel").textContent, "CURRENT TERM");
+  assert.equal(app.nodes.get("invariantMetricLabel").textContent, "REDEXES");
+  assert.equal(app.nodes.get("iModulo").textContent, 1);
+  app.nodes.get("moves").children[0].click();
+  await app.movesResponse();
+  assert.equal(app.state.current, "(λy.y) (λy.y)");
+  const step = app.run("jevStep()");
+  await app.decisionResponse(0);
+  await app.fireTimer(450);
+  await app.movesResponse();
+  assert.equal(await step, true);
+  assert.equal(app.state.current, "λy.y");
+  assert.ok(app.nodes.get("jevStep").disabled);
+  assert.match(app.nodes.get("invariantNotice").textContent, /Normal form/);
 });
 
 test("choosing an application again preserves and resumes the derivation", async () => {

@@ -49,6 +49,17 @@
               </ul>
               <span class="landing-cta">Solve equations</span>
             </button>
+            <button class="landing-card" id="launchLambda">
+              <span class="landing-kicker">REDUCTION STRATEGY</span>
+              <span class="landing-title">Lambda × Jev</span>
+              <ul>
+                <li>Beta-reduce untyped lambda terms; the menu lists every redex at every position.</li>
+                <li>Capture-avoiding substitution is server-owned — the model only names a redex.</li>
+                <li>Normal order always finds a normal form when one exists; innermost can diverge — the first real strategy test.</li>
+                <li>Normalization is undecidable: budget stops are inconclusive, not proofs. Try Ω and watch it loop.</li>
+              </ul>
+              <span class="landing-cta">Reduce a term</span>
+            </button>
             <button class="landing-card" id="launchMiu">
               <span class="landing-kicker">HISTORICAL INSPIRATION</span>
               <span class="landing-title">MIU × Jev</span>
@@ -77,16 +88,17 @@
             <select id="example">
               <option value="miu">MIU · the MU puzzle</option>
               <option value="algebra">Algebra · solve a linear equation</option>
+              <option value="lambda">Lambda · beta-reduce a term</option>
             </select>
             <button id="chooseApp">Choose application</button>
             </div>
             <p class="journal-help">Changing examples starts a new derivation. Provider settings and the decision log are shared.</p>
           </div>
           <div class="equation-editor hidden" id="equationEditor">
-            <label for="equation">STARTING EQUATION</label>
+            <label for="equation" id="equationLabel">STARTING EQUATION</label>
             <input id="equation" value="2(x + 3) = 14" maxlength="512" spellcheck="false" />
             <button id="loadEquation">Load equation</button>
-            <p class="journal-help">Use x, integers, fractions, + - * /, and parentheses. Examples: 3x + 2 = x + 10; x/2 + 1 = 3. No powers or variable denominators.</p>
+            <p class="journal-help">Algebra: one variable x, integers, fractions, + - * /, and parentheses; examples: 3x + 2 = x + 10; x/2 + 1 = 3. Lambda: variables a-z, λ (or \), ., and parentheses; application is juxtaposition, e.g. (\x. x x) (\y. y). Try Ω: (\x. x x) (\x. x x) — it never reaches a normal form.</p>
           </div>
           <div class="stage-top">
             <div>
