@@ -30,6 +30,7 @@ class AlgebraParserTests(unittest.TestCase):
             "x/(x-x+1)=2", "x/0=2", "1/0=x", "x/(1-1)=3",
             "x+y=2", "sin(x)=1", "x=0.5", "2 3=x", "(x+1=2",
             "__import__('os').system('echo invalid')=x", "x;print(1)=2",
+            "\uff12x=4", "x=\u0663", "x =\u00d7 2",
         ):
             with self.subTest(text=text):
                 with self.assertRaises(ValueError):

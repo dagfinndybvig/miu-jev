@@ -121,7 +121,7 @@ class Parser:
     def __init__(self, text: str) -> None:
         self.tokens: list[str] = []
         offset = 0
-        for match in re.finditer(r"\d+|x|[()+*/=-]", text):
+        for match in re.finditer(r"[0-9]+|x|[()+*/=-]", text):
             if text[offset:match.start()].strip():
                 raise ValueError("Use only x, integers, +, -, *, /, parentheses, and one =")
             self.tokens.append(match.group())
