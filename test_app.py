@@ -4,9 +4,13 @@ from unittest.mock import patch
 from app import (
     MAX_MIU_LENGTH,
     choose_move,
+    contraction_opportunities,
     decision_request,
+    heuristic_score,
+    is_growth_only_trap,
     legal_moves,
     rewrite_opportunities,
+    select_move,
     validate_miu,
 )
 
@@ -50,6 +54,23 @@ class LegalMovesTests(unittest.TestCase):
 
     def test_rewrite_opportunity_count(self):
         self.assertEqual(rewrite_opportunities("MIIIIUU"), 3)
+        self.assertEqual(contraction_opportunities("MIIIIUU"), 3)
+
+    def test_growth_with_contraction_is_better_than_blind_doubling(self):
+        current = "MII"
+        moves = legal_moves(current)
+        duplicate = next(move for move in moves if move["rule"] == 2)
+        append = next(move for move in moves if move["rule"] == 1)
+        self.assertGreater(
+            heuristic_score(duplicate, current, "MU", [current]),
+            heuristic_score(append, current, "MU", [current]),
+        )
+
+    def test_growth_only_trap_detection(self):
+        self.assertTrue(is_growth_only_trap("MIU"))
+        self.assertTrue(is_growth_only_trap("MIIU"))
+        self.assertFalse(is_growth_only_trap("MUIU"))
+        self.assertFalse(is_growth_only_trap("MII"))
 
 
 class SelectionTests(unittest.TestCase):
@@ -59,6 +80,7 @@ class SelectionTests(unittest.TestCase):
             decision_request(
                 "typesafe",
                 "jev-latest",
+                "guided",
                 "MI",
                 "MU",
                 ["MI"],
@@ -79,7 +101,7 @@ class SelectionTests(unittest.TestCase):
             for index in range(30)
         ]
         decide.side_effect = (
-            lambda provider, model, current, goal, history, candidates: (
+            lambda provider, model, policy, current, goal, history, candidates: (
                 candidates[-1],
                 {
                     candidate["id"]: 1 / len(candidates)
@@ -87,7 +109,9 @@ class SelectionTests(unittest.TestCase):
                 },
             )
         )
-        result = choose_move("ollama", "nimble", "MI", "MU", ["MI"], moves)
+        result = choose_move(
+            "ollama", "nimble", "guided", "MI", "MU", ["MI"], moves
+        )
         self.assertEqual(result["move"]["id"], "move-29")
         self.assertEqual(decide.call_count, 3)
         self.assertEqual(result["rounds"][0]["contenders"], 30)
@@ -110,9 +134,52 @@ class SelectionTests(unittest.TestCase):
             moves[-1],
             {move["id"]: 1 / len(moves) for move in moves},
         )
-        result = choose_move("typesafe", "jev-latest", "MI", "MU", ["MI"], moves)
+        result = choose_move(
+            "typesafe", "jev-latest", "guided", "MI", "MU", ["MI"], moves
+        )
         self.assertEqual(result["move"]["id"], "move-29")
         decide.assert_called_once()
+
+    def test_guided_policy_prefers_a_reduction(self):
+        current = "MIII"
+        moves = legal_moves(current)
+        growth = next(move for move in moves if move["rule"] == 2)
+        reduction = next(move for move in moves if move["rule"] == 3)
+        selected = select_move(
+            "guided",
+            current,
+            "MU",
+            [current],
+            moves,
+            growth,
+            {growth["id"]: 0.99, reduction["id"]: 0.01},
+        )
+        self.assertEqual(selected["id"], reduction["id"])
+
+    def test_guided_policy_avoids_miu_growth_trap(self):
+        current = "MI"
+        moves = legal_moves(current)
+        trapped = next(move for move in moves if move["result"] == "MIU")
+        productive = next(move for move in moves if move["result"] == "MII")
+        selected = select_move(
+            "guided",
+            current,
+            "MU",
+            [current],
+            moves,
+            trapped,
+            {trapped["id"]: 0.999, productive["id"]: 0.001},
+        )
+        self.assertEqual(selected["id"], productive["id"])
+
+    def test_model_policy_preserves_model_choice(self):
+        current = "MIII"
+        moves = legal_moves(current)
+        growth = next(move for move in moves if move["rule"] == 2)
+        selected = select_move(
+            "model", current, "MU", [current], moves, growth, {}
+        )
+        self.assertEqual(selected["id"], growth["id"])
 
 
 if __name__ == "__main__":

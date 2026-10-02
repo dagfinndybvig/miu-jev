@@ -321,6 +321,7 @@ The browser UI provides:
 - configurable auto-run step and string-length budgets;
 - automatic stopping before cycles or over-limit growth;
 - a provider switch between local Ollama/Nimble and hosted TypeSafe/Jev;
+- a **guided** reduction-first policy and a **model only** comparison mode;
 - the complete menu of legal rewrites at every step;
 - manual selection of any legal move;
 - decision probabilities when available;
@@ -379,6 +380,26 @@ These are execution safeguards, not new MIU rules. The complete legal menu
 remains visible, and a person may still apply any legal move manually. The
 server additionally rejects MIU strings over 8,192 characters to bound request
 and rendering costs.
+
+### Guided selection heuristics
+
+Prompting alone does not reliably teach a decision model how to control an
+open-ended symbolic search. The default **Guided · reductions first** policy
+therefore combines the provider's probability distribution with deterministic
+search heuristics:
+
+1. take the target immediately when available;
+2. when any legal move shortens the string, choose among shortening moves;
+3. prefer novel states over already visited states;
+4. reward results that expose `III` or `UU` contractions; and
+5. penalize Rule 2 doubling when it creates no concrete contraction; and
+6. avoid **growth-only traps** such as `MIU → MIUIU → MIUIUIUIU → …`, where
+   Rule 2 remains the only move and no `III` or `UU` can ever appear.
+
+The provider still evaluates the legal menu, and every applied move remains a
+formal MIU rewrite. The heuristic layer controls search strategy, not legality.
+For experiments with unmodified model behavior, select **Model only ·
+experimental** in **Settings & rules**.
 
 In the default mode, the model is called through Ollama's local
 [`POST /v1/systemone` decision endpoint][systemone]. No prompts, strings, or

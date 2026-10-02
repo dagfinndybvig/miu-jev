@@ -16,6 +16,7 @@ const elements = {
   goal: $("goal"),
   model: $("model"),
   provider: $("provider"),
+  policy: $("policy"),
   moves: $("moves"),
   history: $("history"),
   stepCount: $("stepCount"),
@@ -69,6 +70,7 @@ function setBusy(busy) {
   elements.goal.disabled = busy || state.auto;
   elements.model.disabled = busy || state.auto;
   elements.provider.disabled = busy || state.auto;
+  elements.policy.disabled = busy || state.auto;
   elements.maxSteps.disabled = busy || state.auto;
   elements.maxLength.disabled = busy || state.auto;
 }
@@ -157,6 +159,7 @@ async function jevStep(autoMode = false) {
       goal,
       provider: elements.provider.value,
       model: elements.model.value.trim(),
+      policy: elements.policy.value,
       history: state.history.map((entry) => entry.value),
     });
     state.moves = payload.moves;
@@ -186,7 +189,10 @@ async function jevStep(autoMode = false) {
       state.auto = false;
       return false;
     }
-    const source = payload.provider === "typesafe" ? "TypeSafe Jev" : "Local Nimble";
+    const providerName =
+      payload.provider === "typesafe" ? "TypeSafe Jev" : "Local Nimble";
+    const source =
+      payload.policy === "guided" ? `${providerName} · guided` : `${providerName} · model only`;
     return await applyMove(payload.move, source);
   } catch (error) {
     setError(error.message);

@@ -55,6 +55,8 @@ Preserve these properties in every change:
    the project must still work without an API key.
 6. **Safety budgets are not formal rules.** Auto-run may stop for length,
    steps, or cycles, but the legal menu must still show every MIU rewrite.
+7. **Guidance is strategy, not legality.** The default guided policy may rank
+   or prefer legal moves, but it must never synthesize or apply a non-MIU move.
 
 ## MIU rule gotchas
 
@@ -92,6 +94,14 @@ Both providers receive the same state:
 
 They return a choice and probabilities. Keep provider-specific behavior behind
 `decision_request`.
+
+The default `guided` policy is intentionally reduction-first. If a group has
+any shortening moves, `select_move` must choose within that subset. Otherwise
+it combines provider probabilities with novelty, contraction-opportunity, and
+growth heuristics. It must also avoid a growth-only trap when a productive
+alternative exists. `MIU` is the canonical trap: only Rule 2 applies, and
+duplicating its alternating `IU` tail can never create `III` or `UU`. The
+`model` policy must preserve the provider's raw choice for comparison.
 
 ### Ollama / Nimble
 
@@ -165,6 +175,8 @@ Add or update tests when changing:
 
 - any MIU rule or occurrence-scanning behavior;
 - provider selection or limits;
+- guided or model-only selection policy;
+- heuristic scoring and reduction-first behavior;
 - tournament grouping;
 - TypeSafe credential requirements;
 - request or response mapping; or

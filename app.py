@@ -121,9 +121,95 @@ def rewrite_opportunities(value: str) -> int:
     )
 
 
+def contraction_opportunities(value: str) -> int:
+    return (
+        sum(value[index : index + 3] == "III" for index in range(len(value) - 2))
+        + sum(value[index : index + 2] == "UU" for index in range(len(value) - 1))
+    )
+
+
+def is_growth_only_trap(value: str) -> bool:
+    moves = legal_moves(value)
+    if len(moves) != 1 or moves[0]["rule"] != 2:
+        return False
+    doubled = moves[0]["result"]
+    return (
+        contraction_opportunities(doubled) == 0
+        and not doubled.endswith("I")
+    )
+
+
+def heuristic_score(
+    move: dict[str, Any],
+    current: str,
+    goal: str,
+    history: list[str],
+) -> float:
+    result = move["result"]
+    if result == goal:
+        return 1_000_000.0
+
+    length_delta = len(result) - len(current)
+    contractions = contraction_opportunities(result)
+    score = -2.0 * length_delta
+    score += 5.0 if result not in history else -20.0
+    score += 6.0 * contractions
+    score += 1.5 * rewrite_opportunities(result)
+    score += 0.25 * (abs(len(current) - len(goal)) - abs(len(result) - len(goal)))
+    if length_delta < 0:
+        score += 20.0
+    if move["rule"] == 2 and contractions == 0:
+        score -= 10.0
+    if is_growth_only_trap(result):
+        score -= 100.0
+    return score
+
+
+def select_move(
+    policy: str,
+    current: str,
+    goal: str,
+    history: list[str],
+    candidates: list[dict[str, Any]],
+    model_choice: dict[str, Any],
+    probabilities: dict[str, float],
+) -> dict[str, Any]:
+    if policy == "model":
+        return model_choice
+    if policy != "guided":
+        raise ValueError("policy must be guided or model")
+
+    targets = [move for move in candidates if move["result"] == goal]
+    if targets:
+        return targets[0]
+
+    reductions = [
+        move for move in candidates if len(move["result"]) < len(current)
+    ]
+    pool = reductions or candidates
+    novel = [move for move in pool if move["result"] not in history]
+    if novel:
+        pool = novel
+    productive = [
+        move for move in pool if not is_growth_only_trap(move["result"])
+    ]
+    if productive:
+        pool = productive
+
+    return max(
+        pool,
+        key=lambda move: (
+            heuristic_score(move, current, goal, history)
+            + 5.0 * probabilities.get(move["id"], 0.0),
+            probabilities.get(move["id"], 0.0),
+        ),
+    )
+
+
 def decision_request(
     provider: str,
     model: str,
+    policy: str,
     current: str,
     goal: str,
     history: list[str],
@@ -143,6 +229,7 @@ def decision_request(
             f"length: {len(move['result'])}; "
             f"length change: {len(move['result']) - len(current):+d}; "
             f"immediate non-duplication rewrites: {rewrite_opportunities(move['result'])}; "
+            f"growth-only trap: {'yes' if is_growth_only_trap(move['result']) else 'no'}; "
             f"already visited: {'yes' if move['result'] in history else 'no'}"
         )
 
@@ -161,6 +248,8 @@ def decision_request(
             "exponentially forever, especially when the target is impossible. Prefer "
             "contractions, novel states, and moves that create immediate III or UU "
             "rewrites. Choose doubling only when it creates a concrete rewrite opportunity."
+            " Avoid a growth-only trap where Rule 2 remains the sole move and repeated "
+            "doubling can never create III or UU."
         ),
     }
     request_body: dict[str, Any] = {
@@ -223,12 +312,22 @@ def decision_request(
         for key, probability in answer.get("probabilities", {}).items()
         if key in by_key
     }
-    return by_key[selected_key], probabilities
+    selected = select_move(
+        policy,
+        current,
+        goal,
+        history,
+        candidates,
+        by_key[selected_key],
+        probabilities,
+    )
+    return selected, probabilities
 
 
 def choose_move(
     provider: str,
     model: str,
+    policy: str,
     current: str,
     goal: str,
     history: list[str],
@@ -251,7 +350,7 @@ def choose_move(
                 probabilities = {winner["id"]: 1.0}
             else:
                 winner, probabilities = decision_request(
-                    provider, model, current, goal, history, group
+                    provider, model, policy, current, goal, history, group
                 )
             winners.append(winner)
             round_probabilities.update(probabilities)
@@ -323,6 +422,9 @@ class RequestHandler(BaseHTTPRequestHandler):
                 if provider not in DEFAULT_MODELS:
                     raise ValueError("provider must be ollama or typesafe")
                 model = payload.get("model", DEFAULT_MODELS[provider])
+                policy = payload.get("policy", "guided")
+                if policy not in ("guided", "model"):
+                    raise ValueError("policy must be guided or model")
                 history = payload.get("history", [])
                 if not isinstance(model, str) or not model.strip():
                     raise ValueError("model must be a non-empty string")
@@ -332,9 +434,10 @@ class RequestHandler(BaseHTTPRequestHandler):
                     raise ValueError("history must be a list of strings")
                 moves = legal_moves(current)
                 result = choose_move(
-                    provider, model, current, goal, history, moves
+                    provider, model, policy, current, goal, history, moves
                 )
                 result["provider"] = provider
+                result["policy"] = policy
                 result["moves"] = moves
                 self.send_json(result)
                 return
