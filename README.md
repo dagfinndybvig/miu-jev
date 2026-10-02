@@ -29,6 +29,14 @@ complete trace keeps the boundary inspectable. Algebra is where this pattern
 does real work, lambda is where model choice finally becomes strategy, and
 MIU is where it began.
 
+A first measured result, in plain terms: when we ran the same experiment on
+lambda calculus — the tiny formal system underneath programming languages —
+the decision models dodged every infinite-loop trap we set, and they kept
+doing it even after we removed every hint we normally compute for them.
+They seem to read the candidates themselves. It is early evidence from small
+menus; the measured lambda sample near the end carries the numbers and the
+caveats.
+
 ## Quick start
 
 Clone the repository and enter it:
