@@ -1,10 +1,11 @@
 # MIU × Jev
 
-**MIU × Jev** is a local experiment in constrained machine choice. A formal
-engine generates every move permitted by the MIU system, and an Ollama decision
-model chooses one move from that menu. The model may decide *which* legal path
-to follow, but it can never invent a rule, alter a string directly, or make an
-illegal move.
+**MIU × Jev** is an experiment in constrained machine choice. A formal engine
+generates every move permitted by the MIU system, and a decision model chooses
+one move from that menu. Local Ollama/Nimble is the default; TypeSafe's hosted
+Jev API is an optional secondary provider. In either mode, the model may decide
+*which* legal path to follow, but it can never invent a rule, alter a string
+directly, or make an illegal move.
 
 The result is a small, inspectable example of an AI operating inside hard
 symbolic boundaries:
@@ -256,11 +257,13 @@ The names are related but not interchangeable:
 | **Nimble** | [Bespoke Labs' open decision model][nimble], trained for the same broad class of schema-bound judgments. |
 | **Ollama System One** | The local API used here to run `nimble:latest` and obtain typed choices and probabilities. |
 
-MIU × Jev currently runs **Nimble locally through Ollama**, not the hosted Jev
-service. The UI keeps the name “Jev” because the project began with the Jev
-interaction pattern: present state plus a typed menu, receive a probabilistic
-decision, and leave execution to deterministic code. Local Nimble makes that
-experiment self-contained and keeps every derivation on the user's machine.
+MIU × Jev defaults to **Nimble locally through Ollama**, making the experiment
+self-contained and keeping every derivation on the user's machine. It can also
+call the hosted TypeSafe Jev service when the user deliberately selects that
+provider and supplies a `TYPESAFE_API_KEY`. The UI keeps the name “Jev” because
+the project began with the Jev interaction pattern: present state plus a typed
+menu, receive a probabilistic decision, and leave execution to deterministic
+code.
 
 Jev's structural guarantees should not be confused with semantic infallibility.
 A typed decision model cannot return a malformed answer or an option outside
@@ -278,25 +281,26 @@ whether the model's strategy is useful.
 
 The browser UI provides:
 
-- **Ask Jev for one move** to request a single `nimble` decision;
+- **Ask Jev for one move** to request one decision from the selected provider;
 - **Auto-run** to continue choosing until stopped, stuck, or at the target;
+- a provider switch between local Ollama/Nimble and hosted TypeSafe/Jev;
 - the complete menu of legal rewrites at every step;
 - manual selection of any legal move;
-- local decision probabilities when available;
+- decision probabilities when available;
 - undo, reset, and a complete derivation history;
 - live string length, legal-move count, and `I` count modulo three; and
 - editable target, model, and auto-run speed settings.
 
-Ollama's choice questions allow at most 26 options. If a state has more than 26
-legal applications, the server uses successive groups and a final round so
-that every legal move remains eligible for selection.
+Ollama's choice questions allow at most 26 options, while TypeSafe accepts up
+to 255. If a state exceeds the selected provider's limit, the server uses
+successive groups and a final round so that every legal move remains eligible.
 
 ## Architecture
 
 The project intentionally has no package dependencies or frontend build step.
 
 ```text
-app.py          HTTP server, MIU engine, validation, Ollama client
+app.py          HTTP server, MIU engine, validation, provider clients
 web/
   index.html    application structure
   styles.css    responsive interface
@@ -308,17 +312,28 @@ The Python server is stateless with respect to a run. The browser sends the
 current string and derivation history when requesting a decision. The server
 recomputes the legal moves rather than trusting a client-supplied menu.
 
-The model is called through Ollama's local
+In the default mode, the model is called through Ollama's local
 [`POST /v1/systemone` decision endpoint][systemone]. No prompts, strings, or
-derivations leave the machine through this application.
+derivations leave the machine in that mode.
+
+When TypeSafe is selected, the server sends the current string, target, recent
+history, and legal move descriptions to
+`https://api.typesafe.ai/v1/systemone`. The API key is read only by the Python
+server and is sent in the required Bearer authorization header. It is never
+returned by `/api/health`, included in browser JavaScript, or written to the
+derivation history.
 
 [systemone]: https://docs.ollama.com/api/systemone
 
 ## Requirements
 
 - Python 3.10 or later
-- Ollama 0.35 or later
-- A local decision model, by default `nimble:latest`
+- at least one decision provider:
+  - **default:** Ollama 0.35+ with a local decision model such as
+    `nimble:latest`; or
+  - **optional:** a TypeSafe API key with access to `jev-latest`.
+
+### Option A: local Ollama/Nimble (default)
 
 Confirm that the model is installed:
 
@@ -331,6 +346,32 @@ If necessary, install it:
 ```powershell
 ollama pull nimble
 ```
+
+No API key is needed. This remains the recommended path for local exploration.
+
+### Option B: hosted TypeSafe/Jev
+
+Set `TYPESAFE_API_KEY` in the process environment before starting the server.
+On PowerShell:
+
+```powershell
+$env:TYPESAFE_API_KEY = "your-key"
+python app.py
+```
+
+Alternatively, copy `.env.example` to `.env` and fill in the value:
+
+```dotenv
+TYPESAFE_API_KEY=your-key
+```
+
+For compatibility with GitHub Copilot CLI setups, the server also reads
+`~/.copilot/.env` when present. Existing process environment variables always
+take precedence over values in either file.
+
+The repository ignores `.env` and `.env.*` files except `.env.example`. Never
+commit an API key. Once configured, open **Settings & rules** in the UI and
+select **TypeSafe API / Jev**. The model changes to `jev-latest` automatically.
 
 ## Run
 

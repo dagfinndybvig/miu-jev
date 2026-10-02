@@ -12,3 +12,7 @@ env/
 Thumbs.db
 
 *.log
+
+.env
+.env.*
+!.env.example

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       name="description"
-      content="An exact MIU formal-system engine with a local Jev decision model choosing each move."
+      content="An exact MIU formal-system engine with local Nimble or hosted Jev choosing each move."
     />
     <title>MIU × Jev</title>
     <link rel="stylesheet" href="/styles.css" />
@@ -14,15 +14,15 @@
     <div class="shell">
       <header>
         <div>
-          <p class="eyebrow">FORMAL PLAYGROUND / LOCAL AI</p>
+          <p class="eyebrow">FORMAL PLAYGROUND / CONSTRAINED AI</p>
           <h1>MIU <span>×</span> Jev</h1>
           <p class="subtitle">
-            The machine enforces the rules. Nimble chooses where to go.
+            The machine enforces the rules. A decision model chooses where to go.
           </p>
         </div>
-        <div class="status" id="ollamaStatus">
+        <div class="status" id="engineStatus">
           <span class="status-dot"></span>
-          <span>Checking Ollama</span>
+          <span>Checking engine</span>
         </div>
       </header>
 
@@ -67,7 +67,7 @@
                 <span class="label">LEGAL MENU</span>
                 <h2>Choose the next rewrite</h2>
               </div>
-              <span class="thinking hidden" id="thinking">Nimble is deciding…</span>
+              <span class="thinking hidden" id="thinking">Decision model is choosing…</span>
             </div>
             <div class="moves" id="moves"></div>
           </div>
@@ -87,7 +87,14 @@
           <summary>Settings & rules</summary>
           <div class="settings-grid">
             <label>
-              Ollama model
+              Decision provider
+              <select id="provider">
+                <option value="ollama">Local Ollama / Nimble</option>
+                <option value="typesafe">TypeSafe API / Jev</option>
+              </select>
+            </label>
+            <label>
+              Model
               <input id="model" value="nimble:latest" spellcheck="false" />
             </label>
             <label>

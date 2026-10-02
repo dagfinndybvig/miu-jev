@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import mimetypes
+import os
 import string
 import urllib.error
 import urllib.request
@@ -15,9 +16,29 @@ from typing import Any
 ROOT = Path(__file__).resolve().parent
 WEB_ROOT = ROOT / "web"
 OLLAMA_URL = "http://127.0.0.1:11434/v1/systemone"
-DEFAULT_MODEL = "nimble:latest"
+TYPESAFE_URL = "https://api.typesafe.ai/v1/systemone"
+DEFAULT_PROVIDER = "ollama"
+DEFAULT_MODELS = {"ollama": "nimble:latest", "typesafe": "jev-latest"}
 MAX_BODY_BYTES = 1_000_000
 CHOICE_KEYS = string.ascii_uppercase
+PROVIDER_CHOICE_LIMITS = {"ollama": len(CHOICE_KEYS), "typesafe": 255}
+
+
+def load_env_file(path: Path) -> None:
+    if not path.is_file():
+        return
+    for line in path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        name, value = stripped.split("=", 1)
+        name = name.strip()
+        if name and name not in os.environ:
+            os.environ[name] = value.strip().strip("\"'")
+
+
+load_env_file(ROOT / ".env")
+load_env_file(Path.home() / ".copilot" / ".env")
 
 
 def legal_moves(value: str) -> list[dict[str, Any]]:
@@ -89,7 +110,8 @@ def validate_miu(value: Any, field: str) -> str:
     return value
 
 
-def ollama_decision(
+def decision_request(
+    provider: str,
     model: str,
     current: str,
     goal: str,
@@ -98,7 +120,12 @@ def ollama_decision(
 ) -> tuple[dict[str, Any], dict[str, float]]:
     criteria: dict[str, str] = {}
     by_key: dict[str, dict[str, Any]] = {}
-    for key, move in zip(CHOICE_KEYS, candidates):
+    keys = (
+        list(CHOICE_KEYS)
+        if provider == "ollama"
+        else [f"move_{index}" for index in range(len(candidates))]
+    )
+    for key, move in zip(keys, candidates):
         by_key[key] = move
         criteria[key] = (
             f"{move['label']}; result: {move['result']}; "
@@ -117,7 +144,7 @@ def ollama_decision(
             "Use this fact when relevant, but still choose one of the supplied legal moves."
         ),
     }
-    request_body = {
+    request_body: dict[str, Any] = {
         "model": model,
         "state": state,
         "questions": {
@@ -132,13 +159,29 @@ def ollama_decision(
                 "criteria": criteria,
             }
         },
-        "keep_alive": "10m",
     }
+    headers = {"Content-Type": "application/json"}
+    url = OLLAMA_URL
+    provider_name = "Ollama"
+    if provider == "ollama":
+        request_body["keep_alive"] = "10m"
+    elif provider == "typesafe":
+        api_key = os.environ.get("TYPESAFE_API_KEY", "").strip()
+        if not api_key:
+            raise RuntimeError(
+                "TypeSafe is not configured. Set TYPESAFE_API_KEY before starting the server."
+            )
+        url = TYPESAFE_URL
+        headers["Authorization"] = f"Bearer {api_key}"
+        provider_name = "TypeSafe"
+    else:
+        raise ValueError(f"Unsupported decision provider: {provider}")
+
     encoded = json.dumps(request_body).encode("utf-8")
     request = urllib.request.Request(
-        OLLAMA_URL,
+        url,
         data=encoded,
-        headers={"Content-Type": "application/json"},
+        headers=headers,
         method="POST",
     )
     try:
@@ -146,14 +189,16 @@ def ollama_decision(
             payload = json.load(response)
     except urllib.error.HTTPError as error:
         detail = error.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"Ollama returned HTTP {error.code}: {detail}") from error
+        raise RuntimeError(
+            f"{provider_name} returned HTTP {error.code}: {detail}"
+        ) from error
     except urllib.error.URLError as error:
-        raise RuntimeError(f"Could not reach Ollama at 127.0.0.1:11434: {error.reason}") from error
+        raise RuntimeError(f"Could not reach {provider_name}: {error.reason}") from error
 
     answer = payload.get("answers", {}).get("next_move", {})
     selected_key = answer.get("choice")
     if selected_key not in by_key:
-        raise RuntimeError("Ollama returned an invalid move choice")
+        raise RuntimeError(f"{provider_name} returned an invalid move choice")
     probabilities = {
         by_key[key]["id"]: float(probability)
         for key, probability in answer.get("probabilities", {}).items()
@@ -163,6 +208,7 @@ def ollama_decision(
 
 
 def choose_move(
+    provider: str,
     model: str,
     current: str,
     goal: str,
@@ -178,14 +224,15 @@ def choose_move(
     while len(contenders) > 1:
         winners: list[dict[str, Any]] = []
         round_probabilities: dict[str, float] = {}
-        for offset in range(0, len(contenders), len(CHOICE_KEYS)):
-            group = contenders[offset : offset + len(CHOICE_KEYS)]
+        choice_limit = PROVIDER_CHOICE_LIMITS[provider]
+        for offset in range(0, len(contenders), choice_limit):
+            group = contenders[offset : offset + choice_limit]
             if len(group) == 1:
                 winner = group[0]
                 probabilities = {winner["id"]: 1.0}
             else:
-                winner, probabilities = ollama_decision(
-                    model, current, goal, history, group
+                winner, probabilities = decision_request(
+                    provider, model, current, goal, history, group
                 )
             winners.append(winner)
             round_probabilities.update(probabilities)
@@ -208,7 +255,26 @@ class RequestHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         if self.path == "/api/health":
-            self.send_json({"ok": True, "model": DEFAULT_MODEL})
+            self.send_json(
+                {
+                    "ok": True,
+                    "default_provider": DEFAULT_PROVIDER,
+                    "providers": {
+                        "ollama": {
+                            "available": True,
+                            "default_model": DEFAULT_MODELS["ollama"],
+                            "label": "Local Ollama / Nimble",
+                        },
+                        "typesafe": {
+                            "available": bool(
+                                os.environ.get("TYPESAFE_API_KEY", "").strip()
+                            ),
+                            "default_model": DEFAULT_MODELS["typesafe"],
+                            "label": "TypeSafe API / Jev",
+                        },
+                    },
+                }
+            )
             return
 
         requested = "index.html" if self.path in ("/", "") else self.path.lstrip("/")
@@ -234,7 +300,10 @@ class RequestHandler(BaseHTTPRequestHandler):
             if self.path == "/api/choose":
                 current = validate_miu(payload.get("current"), "current")
                 goal = validate_miu(payload.get("goal", "MU"), "goal")
-                model = payload.get("model", DEFAULT_MODEL)
+                provider = payload.get("provider", DEFAULT_PROVIDER)
+                if provider not in DEFAULT_MODELS:
+                    raise ValueError("provider must be ollama or typesafe")
+                model = payload.get("model", DEFAULT_MODELS[provider])
                 history = payload.get("history", [])
                 if not isinstance(model, str) or not model.strip():
                     raise ValueError("model must be a non-empty string")
@@ -243,7 +312,10 @@ class RequestHandler(BaseHTTPRequestHandler):
                 ):
                     raise ValueError("history must be a list of strings")
                 moves = legal_moves(current)
-                result = choose_move(model, current, goal, history, moves)
+                result = choose_move(
+                    provider, model, current, goal, history, moves
+                )
+                result["provider"] = provider
                 result["moves"] = moves
                 self.send_json(result)
                 return

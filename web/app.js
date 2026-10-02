@@ -6,6 +6,7 @@ const state = {
   selectedId: null,
   busy: false,
   auto: false,
+  providers: {},
 };
 
 const $ = (id) => document.getElementById(id);
@@ -13,6 +14,7 @@ const elements = {
   current: $("currentString"),
   goal: $("goal"),
   model: $("model"),
+  provider: $("provider"),
   moves: $("moves"),
   history: $("history"),
   stepCount: $("stepCount"),
@@ -25,7 +27,7 @@ const elements = {
   reset: $("reset"),
   thinking: $("thinking"),
   error: $("errorBox"),
-  status: $("ollamaStatus"),
+  status: $("engineStatus"),
   delay: $("delay"),
 };
 
@@ -57,6 +59,7 @@ function setBusy(busy) {
   elements.reset.disabled = busy;
   elements.goal.disabled = busy || state.auto;
   elements.model.disabled = busy || state.auto;
+  elements.provider.disabled = busy || state.auto;
 }
 
 function render() {
@@ -134,6 +137,7 @@ async function jevStep() {
     const payload = await api("/api/choose", {
       current: state.current,
       goal,
+      provider: elements.provider.value,
       model: elements.model.value.trim(),
       history: state.history.map((entry) => entry.value),
     });
@@ -145,7 +149,8 @@ async function jevStep() {
     );
     render();
     await new Promise((resolve) => setTimeout(resolve, state.auto ? 100 : 450));
-    await applyMove(payload.move, "Jev");
+    const source = payload.provider === "typesafe" ? "TypeSafe Jev" : "Local Nimble";
+    await applyMove(payload.move, source);
     return true;
   } catch (error) {
     setError(error.message);
@@ -188,13 +193,30 @@ elements.reset.addEventListener("click", async () => {
 elements.goal.addEventListener("input", () => {
   elements.goal.value = elements.goal.value.toUpperCase().replace(/[^MIU]/g, "");
 });
+elements.provider.addEventListener("change", () => {
+  const provider = state.providers[elements.provider.value];
+  if (provider) {
+    elements.model.value = provider.default_model;
+    elements.status.lastElementChild.textContent = provider.label;
+  }
+});
 
 async function boot() {
   try {
     const health = await fetch("/api/health");
     if (!health.ok) throw new Error();
+    const payload = await health.json();
+    state.providers = payload.providers;
+    for (const option of elements.provider.options) {
+      const provider = state.providers[option.value];
+      option.disabled = !provider?.available;
+      if (!provider?.available) option.textContent += " · not configured";
+    }
+    elements.provider.value = payload.default_provider;
+    elements.model.value = state.providers[payload.default_provider].default_model;
     elements.status.classList.add("online");
-    elements.status.lastElementChild.textContent = "Local engine ready";
+    elements.status.lastElementChild.textContent =
+      state.providers[payload.default_provider].label;
     await refreshMoves();
   } catch {
     elements.status.lastElementChild.textContent = "Engine unavailable";
