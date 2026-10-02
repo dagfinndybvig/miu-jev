@@ -482,6 +482,7 @@ The browser UI provides:
 - invariant preflight before automatic search;
 - stagnation detection based on edit distance to the target;
 - automatic stopping before cycles or over-limit growth;
+- locked manual move controls while a model decision or auto-run is active;
 - a provider switch between local Ollama 0.35.0+/Nimble and hosted TypeSafe/Jev;
 - a **guided** reduction-first policy and a **model only** comparison mode;
 - the complete menu of legal rewrites at every step;
@@ -545,6 +546,12 @@ These are execution safeguards, not new MIU rules. The complete legal menu
 remains visible, and a person may still apply any legal move manually. The
 server additionally rejects MIU strings over 8,192 characters to bound request
 and rendering costs.
+
+While a provider decision is pending, manual move controls are temporarily
+disabled. The browser also records the string used for each request and
+discards the response if that source string changes before the decision can be
+applied. This prevents a delayed provider response from adding a move that was
+legal for an earlier state but not for the current derivation.
 
 Before auto-run begins, the app applies the modulo-three invariant. A target
 such as `MU`, with zero `I` symbols, is marked as unreachable because no search
