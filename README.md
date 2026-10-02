@@ -653,8 +653,8 @@ The browser UI provides:
 
 - a **landing page** that opens on launch and offers **Algebra × Jev** as the
   main feature, **Lambda × Jev** as the strategy test, and **MIU × Jev** as
-  the historical inspiration, with highlights
-  from this README; a launch starts the selected example, and the Example menu
+  the historical inspiration, with highlights from this README; a launch
+  starts the selected example, and the Example menu
   switches between them at any time. The **Choose application** control
   returns to the landing without discarding the active derivation, and
   **Continue the current derivation** resumes it; choosing a card starts that
