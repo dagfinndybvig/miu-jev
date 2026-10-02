@@ -65,8 +65,8 @@ python app.py
 ```
 
 Open <http://127.0.0.1:8765>. The app starts on its landing page: choose
-**Algebra × Jev** (the main feature) or **MIU × Jev** (the historical
-inspiration). Use **Settings & rules** to switch providers.
+**Algebra × Jev** (the simple example), **Lambda × Jev** (the strategy test),
+or **MIU × Jev** (the historical inspiration). Use **Settings & rules** to switch providers.
 The browser never receives either provider's credentials.
 Ollama remains selected even when it is unavailable and a TypeSafe key is
 configured. Hosted decisions require an explicit switch to TypeSafe; there is
@@ -652,7 +652,7 @@ whether the model's strategy is useful.
 The browser UI provides:
 
 - a **landing page** that opens on launch and offers **Algebra × Jev** as the
-  main feature, **Lambda × Jev** as the strategy test, and **MIU × Jev** as
+  simple example, **Lambda × Jev** as the strategy test, and **MIU × Jev** as
   the historical inspiration, with highlights from this README; a launch
   starts the selected example, and the Example menu
   switches between them at any time. The **Choose application** control
