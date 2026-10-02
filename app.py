@@ -4,6 +4,7 @@ import argparse
 import json
 import mimetypes
 import os
+import re
 import string
 import urllib.error
 import urllib.request
@@ -16,7 +17,10 @@ from typing import Any
 ROOT = Path(__file__).resolve().parent
 WEB_ROOT = ROOT / "web"
 OLLAMA_URL = "http://127.0.0.1:11434/v1/systemone"
+OLLAMA_VERSION_URL = "http://127.0.0.1:11434/api/version"
 TYPESAFE_URL = "https://api.typesafe.ai/v1/systemone"
+MIN_OLLAMA_VERSION = (0, 35, 0)
+MIN_OLLAMA_VERSION_TEXT = "0.35.0"
 DEFAULT_PROVIDER = "ollama"
 DEFAULT_MODELS = {"ollama": "nimble:latest", "typesafe": "jev-latest"}
 MAX_BODY_BYTES = 1_000_000
@@ -40,6 +44,52 @@ def load_env_file(path: Path) -> None:
 
 load_env_file(ROOT / ".env")
 load_env_file(Path.home() / ".copilot" / ".env")
+
+
+def parse_version(value: str) -> tuple[int, int, int] | None:
+    match = re.match(r"^\s*(\d+)\.(\d+)\.(\d+)", value)
+    if not match:
+        return None
+    return tuple(int(part) for part in match.groups())
+
+
+def ollama_status() -> dict[str, Any]:
+    try:
+        with urllib.request.urlopen(OLLAMA_VERSION_URL, timeout=2) as response:
+            payload = json.load(response)
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as error:
+        return {
+            "available": False,
+            "compatible": False,
+            "version": None,
+            "error": f"Could not reach Ollama: {error}",
+        }
+
+    version = payload.get("version")
+    parsed = parse_version(version) if isinstance(version, str) else None
+    compatible = parsed is not None and parsed >= MIN_OLLAMA_VERSION
+    return {
+        "available": True,
+        "compatible": compatible,
+        "version": version,
+        "error": (
+            None
+            if compatible
+            else f"Ollama {MIN_OLLAMA_VERSION_TEXT} or later is required"
+        ),
+    }
+
+
+def require_compatible_ollama() -> None:
+    status = ollama_status()
+    if not status["available"]:
+        raise RuntimeError(status["error"])
+    if not status["compatible"]:
+        installed = status["version"] or "unknown"
+        raise RuntimeError(
+            f"Ollama {MIN_OLLAMA_VERSION_TEXT} or later is required; "
+            f"found {installed}"
+        )
 
 
 def legal_moves(value: str) -> list[dict[str, Any]]:
@@ -272,6 +322,7 @@ def decision_request(
     url = OLLAMA_URL
     provider_name = "Ollama"
     if provider == "ollama":
+        require_compatible_ollama()
         request_body["keep_alive"] = "10m"
     elif provider == "typesafe":
         api_key = os.environ.get("TYPESAFE_API_KEY", "").strip()
@@ -373,20 +424,30 @@ class RequestHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         if self.path == "/api/health":
+            ollama = ollama_status()
+            typesafe_available = bool(
+                os.environ.get("TYPESAFE_API_KEY", "").strip()
+            )
+            default_provider = (
+                "ollama"
+                if ollama["compatible"]
+                else "typesafe" if typesafe_available else "ollama"
+            )
             self.send_json(
                 {
                     "ok": True,
-                    "default_provider": DEFAULT_PROVIDER,
+                    "default_provider": default_provider,
                     "providers": {
                         "ollama": {
-                            "available": True,
+                            "available": ollama["compatible"],
                             "default_model": DEFAULT_MODELS["ollama"],
-                            "label": "Local Ollama / Nimble",
+                            "label": "Local Ollama 0.35.0+ / Nimble",
+                            "version": ollama["version"],
+                            "minimum_version": MIN_OLLAMA_VERSION_TEXT,
+                            "error": ollama["error"],
                         },
                         "typesafe": {
-                            "available": bool(
-                                os.environ.get("TYPESAFE_API_KEY", "").strip()
-                            ),
+                            "available": typesafe_available,
                             "default_model": DEFAULT_MODELS["typesafe"],
                             "label": "TypeSafe API / Jev",
                         },

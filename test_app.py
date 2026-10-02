@@ -9,6 +9,8 @@ from app import (
     heuristic_score,
     is_growth_only_trap,
     legal_moves,
+    parse_version,
+    require_compatible_ollama,
     rewrite_opportunities,
     select_move,
     validate_miu,
@@ -16,6 +18,24 @@ from app import (
 
 
 class LegalMovesTests(unittest.TestCase):
+    def test_ollama_version_parsing(self):
+        self.assertEqual(parse_version("0.35.0"), (0, 35, 0))
+        self.assertEqual(parse_version("0.35.1-rc1"), (0, 35, 1))
+        self.assertIsNone(parse_version("development"))
+
+    @patch(
+        "app.ollama_status",
+        return_value={
+            "available": True,
+            "compatible": False,
+            "version": "0.34.2",
+            "error": "Ollama 0.35.0 or later is required",
+        },
+    )
+    def test_old_ollama_is_rejected(self, _status):
+        with self.assertRaisesRegex(RuntimeError, "0.35.0 or later"):
+            require_compatible_ollama()
+
     def test_axiom_moves(self):
         moves = legal_moves("MI")
         self.assertEqual(

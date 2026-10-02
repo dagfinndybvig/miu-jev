@@ -6,13 +6,19 @@ Guidance for coding agents and contributors working on MIU × Jev.
 
 MIU × Jev is a dependency-free Python web app for Hofstadter's MIU formal
 system. The Python engine enumerates every legal rewrite from the current
-string. A decision provider—local Ollama/Nimble by default, or hosted
+string. A decision provider—local Ollama 0.35.0+/Nimble by default, or hosted
 TypeSafe/Jev when configured—may choose only from that generated menu. The
 model supplies strategy; deterministic code supplies validity.
+
+**Ollama 0.35.0 or later is mandatory for the local provider.** Earlier
+versions do not expose the System One decision endpoint used by this project.
 
 ## Commands
 
 ```powershell
+# Verify local-provider requirement (must be 0.35.0 or later)
+ollama --version
+
 # Run
 python app.py
 
@@ -51,8 +57,8 @@ Preserve these properties in every change:
    history visible enough to audit.
 4. **Manual and model moves use the same menu.** Do not create a privileged AI
    path that bypasses validation.
-5. **Ollama remains the default.** TypeSafe is an optional secondary provider;
-   the project must still work without an API key.
+5. **Ollama 0.35.0+ remains the default.** TypeSafe is an optional secondary
+   provider; the project must still work without an API key.
 6. **Safety budgets are not formal rules.** Auto-run may stop for length,
    steps, or cycles, but the legal menu must still show every MIU rewrite.
 7. **Guidance is strategy, not legality.** The default guided policy may rank
@@ -103,13 +109,19 @@ alternative exists. `MIU` is the canonical trap: only Rule 2 applies, and
 duplicating its alternating `IU` tail can never create `III` or `UU`. The
 `model` policy must preserve the provider's raw choice for comparison.
 
-### Ollama / Nimble
+### Ollama 0.35.0+ / Nimble
 
+- Minimum Ollama version: **0.35.0**
 - Endpoint: `http://127.0.0.1:11434/v1/systemone`
 - Default model: `nimble:latest`
 - Choice limit: 26
 - Local and keyless
 - Supports `keep_alive`; TypeSafe does not
+
+Do not remove or weaken the runtime version check. `/api/health` must mark the
+local provider unavailable when Ollama is older than 0.35.0, and
+`decision_request` must fail explicitly rather than relying on an endpoint
+404. When changing version parsing, cover stable and prerelease-style strings.
 
 ### TypeSafe / Jev
 
@@ -121,7 +133,8 @@ duplicating its alternating `IU` tail can never create `III` or `UU`. The
 
 When the move count exceeds a provider's choice limit, `choose_move` runs a
 tournament. Every original legal move must remain eligible. A provider with a
-larger limit should not be forced through the 26-choice Ollama grouping.
+larger limit should not be forced through the 26-choice Ollama 0.35.0+
+grouping.
 
 ## Secrets and environment
 
@@ -150,7 +163,7 @@ headers.
 Validate all public inputs. MIU strings must be non-empty and contain only
 `M`, `I`, and `U`. Provider names are restricted to `ollama` and `typesafe`.
 Surface provider and validation failures explicitly; do not silently fall back
-from TypeSafe to Ollama or vice versa.
+from TypeSafe to Ollama 0.35.0+ or vice versa.
 
 ## Frontend gotchas
 
@@ -201,7 +214,7 @@ UI, endpoints, or commands. Preserve the distinction among:
 
 - TypeSafe's hosted **Jev** model;
 - Bespoke Labs' open **Nimble** model; and
-- Ollama's local **System One API** used to run Nimble.
+- Ollama **0.35.0+** and its local **System One API** used to run Nimble.
 
 Do not imply that schema-constrained output guarantees a good decision. It
 guarantees an allowed answer shape; the chosen legal move can still be

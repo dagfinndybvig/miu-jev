@@ -4,10 +4,10 @@
 
 **MIU × Jev** is an experiment in constrained machine choice. A formal engine
 generates every move permitted by the MIU system, and a decision model chooses
-one move from that menu. Local Ollama/Nimble is the default; TypeSafe's hosted
-Jev API is an optional secondary provider. In either mode, the model may decide
-*which* legal path to follow, but it can never invent a rule, alter a string
-directly, or make an illegal move.
+one move from that menu. Local **Ollama 0.35.0 or later** with Nimble is the
+default; TypeSafe's hosted Jev API is an optional secondary provider. In either
+mode, the model may decide *which* legal path to follow, but it can never
+invent a rule, alter a string directly, or make an illegal move.
 
 The result is a small, inspectable example of an AI operating inside hard
 symbolic boundaries:
@@ -27,15 +27,20 @@ Choose one decision provider:
 
 | Provider | Best for | Configuration | Data path |
 |---|---|---|---|
-| **Ollama + Nimble** | Private, offline-capable local exploration | Install `nimble:latest` in Ollama | Decision inputs remain local |
+| **Ollama 0.35.0+ + Nimble** | Private, offline-capable local exploration | Install Ollama 0.35.0 or later and `nimble:latest` | Decision inputs remain local |
 | **TypeSafe + Jev** | Using the original hosted Jev model | Set `TYPESAFE_API_KEY` | Decision inputs are sent to TypeSafe |
 
 The default local path is:
 
 ```powershell
+ollama --version
 ollama pull nimble
 python app.py
 ```
+
+The reported Ollama version must be **0.35.0 or later**. This minimum is
+required because the local System One `/v1/systemone` endpoint is not available
+in earlier releases.
 
 For hosted Jev instead:
 
@@ -444,10 +449,11 @@ The names are related but not interchangeable:
 | **Jev** | TypeSafe AI's hosted System One decision model and the original inspiration for this experiment. |
 | **TypeScript SDK** | A type-safe way for JavaScript and TypeScript applications to define Jev questions and consume constrained answers. |
 | **Nimble** | [Bespoke Labs' open decision model][nimble], trained for the same broad class of schema-bound judgments. |
-| **Ollama System One** | The local API used here to run `nimble:latest` and obtain typed choices and probabilities. |
+| **Ollama 0.35.0+ System One** | The local API used here to run `nimble:latest` and obtain typed choices and probabilities. |
 
-MIU × Jev defaults to **Nimble locally through Ollama**, making the experiment
-self-contained and keeping every derivation on the user's machine. It can also
+MIU × Jev defaults to **Nimble locally through Ollama 0.35.0+**, making the
+experiment self-contained and keeping every derivation on the user's machine.
+It can also
 call the hosted TypeSafe Jev service when the user deliberately selects that
 provider and supplies a `TYPESAFE_API_KEY`. The UI keeps the name “Jev” because
 the project began with the Jev interaction pattern: present state plus a typed
@@ -474,7 +480,7 @@ The browser UI provides:
 - **Auto-run** to continue choosing until stopped, stuck, or at the target;
 - configurable auto-run step and string-length budgets;
 - automatic stopping before cycles or over-limit growth;
-- a provider switch between local Ollama/Nimble and hosted TypeSafe/Jev;
+- a provider switch between local Ollama 0.35.0+/Nimble and hosted TypeSafe/Jev;
 - a **guided** reduction-first policy and a **model only** comparison mode;
 - the complete menu of legal rewrites at every step;
 - manual selection of any legal move;
@@ -483,9 +489,10 @@ The browser UI provides:
 - live string length, legal-move count, and `I` count modulo three; and
 - editable target, model, and auto-run speed settings.
 
-Ollama's choice questions allow at most 26 options, while TypeSafe accepts up
-to 255. If a state exceeds the selected provider's limit, the server uses
-successive groups and a final round so that every legal move remains eligible.
+The choice API in Ollama 0.35.0+ allows at most 26 options, while TypeSafe
+accepts up to 255. If a state exceeds the selected provider's limit, the
+server uses successive groups and a final round so that every legal move
+remains eligible.
 
 ## Architecture
 
@@ -512,7 +519,7 @@ browser
    ▼
 Python MIU engine
    │ enumerates and validates legal moves
-   ├──► Ollama /v1/systemone ──► local Nimble
+   ├──► Ollama 0.35.0+ /v1/systemone ──► local Nimble
    └──► TypeSafe /v1/systemone ► hosted Jev
 ```
 
@@ -555,9 +562,9 @@ formal MIU rewrite. The heuristic layer controls search strategy, not legality.
 For experiments with unmodified model behavior, select **Model only ·
 experimental** in **Settings & rules**.
 
-In the default mode, the model is called through Ollama's local
-[`POST /v1/systemone` decision endpoint][systemone]. No prompts, strings, or
-derivations leave the machine in that mode.
+In the default mode, the model is called through the local
+[`POST /v1/systemone` decision endpoint][systemone] provided by Ollama 0.35.0
+or later. No prompts, strings, or derivations leave the machine in that mode.
 
 When TypeSafe is selected, the server sends the current string, target, recent
 history, and legal move descriptions to
@@ -574,11 +581,17 @@ derivation history.
 
 - Python 3.10 or later
 - at least one decision provider:
-  - **default:** Ollama 0.35+ with a local decision model such as
+  - **default:** Ollama **0.35.0 or later** with a local decision model such as
     `nimble:latest`; or
   - **optional:** a TypeSafe API key with access to `jev-latest`.
 
-### Option A: local Ollama/Nimble (default)
+### Option A: local Ollama 0.35.0+/Nimble (default)
+
+The local provider requires **Ollama 0.35.0 or later**. Check before starting:
+
+```powershell
+ollama --version
+```
 
 Confirm that the model is installed:
 
@@ -642,8 +655,9 @@ python -m unittest -v
 ```
 
 The tests cover all four rewrite rules, overlapping pattern positions, input
-validation, required TypeSafe credential handling, Ollama's 26-choice
-tournament behavior, and TypeSafe's larger choice window.
+validation, required TypeSafe credential handling, the Ollama 0.35.0+
+requirement and 26-choice tournament behavior, and TypeSafe's larger choice
+window.
 
 ## Scope
 
