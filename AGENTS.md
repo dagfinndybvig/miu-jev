@@ -1,12 +1,14 @@
 # AGENTS.md
 
-Guidance for coding agents and contributors working on MIU × Jev.
+Guidance for coding agents and contributors working on Formalism × Jev.
 
 ## Project in one paragraph
 
-MIU × Jev is a dependency-free Python web app with a shared menu for Hofstadter's
-MIU system and exact single-variable algebra. The Python engines generate
-all MIU rewrites or a finite declared algebra rewrite vocabulary.
+Formalism × Jev is a dependency-free Python web app with a shared menu for three
+formal systems: exact single-variable algebra, untyped lambda-calculus beta
+reduction, and Hofstadter's MIU system. The Python engines generate all
+MIU rewrites, a finite declared algebra vocabulary, or every lambda beta redex
+at every position.
 A decision provider—local Ollama 0.35.0+/Nimble by default, or hosted
 TypeSafe/Jev when configured—may choose only from that generated menu. The
 model supplies strategy; deterministic code supplies validity.
@@ -27,7 +29,7 @@ python app.py
 python -m unittest -v
 
 # Syntax checks
-python -m py_compile app.py algebra.py test_app.py test_algebra.py benchmark.py test_benchmark.py
+python -m py_compile app.py algebra.py lambda_calc.py test_app.py test_algebra.py test_lambda_calc.py benchmark.py test_benchmark.py
 node --check web\app.js
 node --test test_web.js
 ```
@@ -40,7 +42,9 @@ Python package dependencies and no frontend build step.
 ```text
 app.py          MIU rules, provider clients, HTTP API, static file server
 algebra.py      exact linear-equation parser, rewrite menu, and guidance
+lambda_calc.py exact lambda-term parser, beta redex menus, and guidance
 test_algebra.py exact equivalence, limits, policies, and shared-provider tests
+test_lambda_calc.py lambda substitution, menus, limits, and policy tests
 test_app.py     unit tests for rules, provider limits, and configuration
 test_web.js     browser-state regression tests using Node.js built-ins
 benchmark.py    controlled baseline/provider comparisons and bounded BFS
@@ -58,8 +62,9 @@ Preserve these properties in every change:
 
 1. **The server owns legality.** Never accept a client-supplied move list as
    authoritative. Recompute legal moves from `current` in `app.py`.
-2. **The model only selects.** A provider must never generate the next string
-   or equation directly. Map its selected option back to a server-generated move.
+2. **The model only selects.** A provider must never generate the next string,
+   equation, or term directly. Map its selected option back to a
+   server-generated move.
 3. **Every derivation step is inspectable.** Keep rule, position, result, and
    history visible enough to audit.
 4. **Manual and model moves use the same menu.** Do not create a privileged AI
@@ -118,6 +123,26 @@ Important details:
   The raw model-only policy must remain available.
 - Use the same provider transport, tournaments, and evidence format as MIU,
   but domain-specific prompts and selection heuristics.
+
+## Lambda invariants
+
+- Use the bounded syntax-tree parser in `lambda_calc.py`; never `eval`,
+  floating point, or a provider-generated term. Syntax is variables a-z,
+  `λ` or `\`, `.`, and parentheses; application is juxtaposition.
+- Every offered move is a single capture-avoiding beta contraction at a
+  server-marked position. The server performs substitution; the provider only
+  names a redex.
+- Goal recognition is server-owned: a beta normal form, meaning no redex
+  remains anywhere in the term. Normalization is undecidable in general, so
+  budget stops must stay labeled inconclusive, never impossible.
+- Lambda limits are 512 characters, 256 syntax nodes, and depth at most 96.
+  Count omitted unrepresentable contractions without discarding the menu
+  remainder, exactly as algebra does.
+- Lambda guidance prefers in-budget, solved, then unvisited results, then
+  scores structural progress, duplication cost, and outer position with model
+  probabilities. The model-only policy must remain available.
+- Use the same provider transport, tournaments, and evidence format as MIU and
+  algebra, with lambda-specific prompts and selection heuristics.
 
 ## Provider contract
 
@@ -196,9 +221,12 @@ headers.
 - `POST /api/moves` accepts `current` and returns server-generated legal moves.
 - `POST /api/choose` accepts `current`, `goal`, `provider`, `model`, and
   `history`; it recomputes moves before asking the provider.
-- Both POST endpoints accept `system` (`miu` by default, or `algebra`).
+- Both POST endpoints accept `system` (`miu` by default, `algebra`, or
+  `lambda`).
   Algebra returns normalized equations and server analysis. Its only goal is
-  `Isolate x`, and its `max_length` range is 8–512. Preserve omitted-system MIU
+  `Isolate x`, and its `max_length` range is 8–512. Lambda returns normalized
+  terms with redex counts; its only goal is `Normal form`, with the same range.
+  Preserve omitted-system MIU
   compatibility.
 
 Validate all public inputs. MIU strings must be non-empty and contain only
@@ -220,8 +248,8 @@ from TypeSafe to Ollama 0.35.0+ or vice versa.
   the active state. Algebra reset uses the loaded initial equation.
 - Bind asynchronous menus and decisions to system as well as revision/current.
   Disable example switching and equation loading during decisions and auto-run.
-- Algebra uses server solved/progress metadata, not edit distance or modulo
-  three. Keep identities and contradictions distinct from failure.
+- Algebra and lambda use server solved/progress metadata, not edit distance or
+  modulo three. Keep identities and contradictions distinct from failure.
 - Provider availability comes from `/api/health`.
 - Keep Ollama selected by default even when unavailable; hosted requests
   require an explicit provider switch.
@@ -261,6 +289,7 @@ Add or update tests when changing:
 
 - any MIU rule or occurrence-scanning behavior;
 - algebra parsing, rewrite equivalence, representation limits, or goal detection;
+- lambda parsing, capture-avoiding substitution, redex menus, or normal-form detection;
 - launching from, returning to, or resuming out of the landing page;
 - switching examples, loading equations, or cross-example journal behavior;
 - provider selection or limits;
@@ -275,7 +304,7 @@ At minimum, run:
 
 ```powershell
 python -m unittest -v
-python -m py_compile app.py algebra.py test_app.py test_algebra.py benchmark.py test_benchmark.py
+python -m py_compile app.py algebra.py lambda_calc.py test_app.py test_algebra.py test_lambda_calc.py benchmark.py test_benchmark.py
 node --check web\app.js
 node --test test_web.js
 ```

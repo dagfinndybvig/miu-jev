@@ -5,8 +5,10 @@
 **Formalism × Jev** is an experiment in constrained machine choice. A formal
 engine generates the complete menu of legal moves, a decision model evaluates
 that menu, and deterministic code executes the selection and records every
-step. The same provider, controls, and decision log drive two formal systems:
+step. The same provider, controls, and decision log drive three formal
+systems:
 **Algebra × Jev**, exact single-variable linear algebra over the rationals,
+**Lambda × Jev**, beta reduction of untyped lambda terms, and
 and **MIU × Jev**, Hofstadter's MU puzzle - the latter mostly included for historical inspiration, it is a bit too simple to really benefit. **Guided** mode uses heuristics with
 model-assisted ranking; **Model only** preserves the provider's choice,
 subject to execution limits. Local **Ollama 0.35.0 or later** with Nimble is
@@ -24,7 +26,8 @@ That is the whole philosophy. Any formal system with a computable, finite menu
 of legal moves admits the same division of labor: deterministic code owns
 soundness, the model contributes judgment among legal alternatives, and a
 complete trace keeps the boundary inspectable. Algebra is where this pattern
-does real work; MIU is where it began.
+does real work, lambda is where model choice finally becomes strategy, and
+MIU is where it began.
 
 ## Quick start
 
@@ -138,6 +141,78 @@ to 64 characters.
 The deterministic engine already knows how to classify linear equations. The
 experiment is about choosing inspectable intermediate steps, not a claim that
 AI is needed to solve them.
+
+## Lambda × Jev
+
+Lambda is where the menu finally gets big enough that choosing is real work.
+
+### What it is
+
+The lambda calculus was introduced by **Alonzo Church** in the early 1930s as
+a formal system for effective computability, before digital computers existed.
+It has three constructs and nothing else:
+
+- **variables**: `x`, `y`, `z`, ...;
+- **abstraction**: `λx.M`, the function that binds `x` and returns `M`; and
+- **application**: `M N`, written by juxtaposition.
+
+A single rewrite rule drives everything: **beta reduction**,
+
+```text
+(λx.M) N  →  M[x := N]
+```
+
+substituting `N` for every free occurrence of `x` in `M`, renaming bound
+variables when needed to avoid capture. A term with no remaining redex is a
+**normal form**. Church encoded numbers, booleans, pairs, and recursion in
+this tiny language, and LISP grew out of it a generation later (McCarthy,
+1958).
+
+Two classical results shape the strategy:
+
+- **Church-Rosser**: reduction order cannot change the destination. Every
+  term has at most one normal form, up to renaming of bound variables.
+- **Standardization**: reducing the leftmost-outermost redex first — normal
+  order — reaches a normal form whenever any order does. Reducing inner
+  redexes first can diverge on terms that normal order reduces fine:
+  `(λx.λy.y) Ω`, where `Ω = (λx. x x) (λx. x x)`, reduces to `λy.y` under
+  normal order and loops forever if Ω is contracted first.
+
+And one hard limit: **normalization is undecidable**. Deciding whether an
+arbitrary term has a normal form would decide the halting problem. This is
+the same honest three-way split MIU draws between a derivation, an invariant
+proof, and an inconclusive search — except here "provably impossible" is not
+generally available either.
+
+**Church-Turing**: Church's lambda-definable functions and Turing's machines
+(1936-37) compute exactly the same class of functions, and Turing proved the
+equivalence. The Church-Turing thesis is the claim that this shared class
+captures what "effectively computable" means. Lambda × Jev runs a
+contemporary decision model inside the oldest formal model of computation.
+
+### What the app does
+
+- The engine parses terms into bounded syntax trees — variables `a`-`z`,
+  `λ` or `\`, `.`, and parentheses — never `eval`.
+- The menu lists **every beta redex at every position**; the model only names
+  one. Capture-avoiding substitution is performed by the server, so a
+  misremembered rule cannot produce variable capture or a malformed term.
+- The goal is server-owned: a beta **normal form**. A term can be a normal
+  form while still containing lambdas, so long as no application of a lambda
+  remains anywhere.
+- **Guided** mode prefers in-budget, normal-form-producing, unvisited
+  results, then scores structural progress, duplication cost (how much work
+  the substitution copies), and outer position, with the model's group
+  probability added. Normal order is the honest default heuristic; the
+  policy is not complete.
+- **Model only** preserves the provider's raw choice. On `(λx.λy.y) Ω` the
+  guided policy escapes the Ω trap; model-only behavior is the experiment.
+- Ω reduces to itself forever. Auto-run stops on cycle and budget rules, and
+  the journal records that as exploration, not failure: normalization is
+  undecidable, so budget stops are inconclusive rather than proofs.
+- Representation limits are 512 characters, 256 syntax nodes, and depth at
+  most 96. Contractions exceeding the bounds are omitted and counted; the
+  separate model-move length budget still defaults to 64 characters.
 
 ## MIU × Jev
 
@@ -577,14 +652,15 @@ whether the model's strategy is useful.
 The browser UI provides:
 
 - a **landing page** that opens on launch and offers **Algebra × Jev** as the
-  main feature and **MIU × Jev** as the historical inspiration, with highlights
+  main feature, **Lambda × Jev** as the strategy test, and **MIU × Jev** as
+  the historical inspiration, with highlights
   from this README; a launch starts the selected example, and the Example menu
   switches between them at any time. The **Choose application** control
   returns to the landing without discarding the active derivation, and
   **Continue the current derivation** resumes it; choosing a card starts that
   example fresh;
-- an **Example** menu for the MU puzzle and linear equations;
-- editable starting equations in algebra, with **Load equation**;
+- an **Example** menu for MIU, linear equations, and lambda terms;
+- editable starting equations and lambda terms, with **Load equation**;
 - **Request one decision** to evaluate the current menu using the selected policy;
 - **Auto-run** to continue choosing until stopped, stuck, or at the target;
 - configurable auto-run step and state-length budgets;
@@ -634,6 +710,23 @@ entered and normalized starting equations. Variable rearrangements remain
 explicit steps, and an invalid equation leaves the active derivation
 unchanged.
 
+### Lambda example
+
+Select **Lambda · beta-reduce a term**. The system and its guidance are
+described in [Lambda × Jev](#lambda--jev). The default example is:
+
+```text
+(λx.x x) (λy.y)
+(λy.y) (λy.y)      beta at the root
+λy.y               beta at the root: normal form
+```
+
+Enter any term with **Load equation**. Try the normal-order classic
+`(λx.λy.y) ((λx. x x) (λx. x x))`, Church addition with
+`(λm.λn.λf. m (n f)) (λf.λx. f x) (λf.λx. f (f x))`, or Ω itself,
+`(λx. x x) (λx. x x)`, which reduces to itself forever and is stopped only
+by budgets. Manual moves work without either provider.
+
 ## Architecture
 
 The project intentionally has no package dependencies or frontend build step.
@@ -641,12 +734,14 @@ The project intentionally has no package dependencies or frontend build step.
 ```text
 app.py          HTTP server, MIU engine, validation, provider clients
 algebra.py      exact linear-equation parser, rewrites, and guidance
+lambda_calc.py exact lambda-term parser, beta redex menus, and guidance
 web/
   index.html    application structure
   styles.css    responsive interface
   app.js        client state and interaction
 test_app.py     rule-engine and selection tests
 test_algebra.py algebra equivalence, limits, policies, and provider tests
+test_lambda_calc.py lambda substitution, menus, limits, and policy tests
 test_web.js     browser-state regression tests (Node.js built-ins)
 benchmark.py    controlled comparisons and bounded BFS reference paths
 test_benchmark.py benchmark generation, safety, and measurement tests
@@ -679,8 +774,8 @@ reported as upstream errors rather than forwarded as invalid JSON.
 
 ### HTTP example selection
 
-`POST /api/moves` and `POST /api/choose` accept `system: "miu"` or
-`system: "algebra"`. Omission defaults to MIU for existing callers. Both
+`POST /api/moves` and `POST /api/choose` accept `system: "miu"`, `system: "algebra"`, or
+`system: "lambda"`. Omission defaults to MIU for existing callers. Both
 recompute moves from `current`; a client-supplied menu is never authoritative.
 
 For example, `/api/moves` accepts:
@@ -693,7 +788,9 @@ It returns normalized `current`, `moves`, `solved`, `progress`, `solution_kind`,
 `omitted_for_limits`, `rules`, and `limits`. `/api/choose` uses the same
 `provider`, `model`, `policy`, `history`, and `max_length` fields as MIU.
 The algebra `goal` must be `"Isolate x"` or omitted. Its `max_length` range
-is 8–512. Decision responses include `system` and an `analysis` object describing
+is 8–512. The lambda `goal` must be `"Normal form"` or omitted, with the
+same 8–512 range; its analysis adds `redexes` counts and per-move duplication
+costs. Decision responses include `system` and an `analysis` object describing
 the input equation. Each algebra move also reports its result's `solved` and
 `progress` values. `/api/health` remains shared provider metadata.
 
@@ -726,7 +823,7 @@ saves a portable snapshot of the active
 derivation and journal; **Clear saved log** removes saved evidence without
 changing the active derivation. The `formal-decision-log.json` export labels each
 example; older records without an identifier are treated as MIU. Logs contain
-MIU states, algebra equations, and provider/model
+MIU states, algebra equations, lambda terms, and provider/model
 names, never provider credentials. On shared browsers, clear the log when done.
 Changing the server port changes the browser origin and its saved log.
 
@@ -893,7 +990,10 @@ hosted-provider selection, stale menus, auto-run cancellation, and provider
 status, decision journals, tournament evidence, export, and benchmark metrics.
 Algebra coverage includes exact rational parsing, solution-set preservation,
 representation limits, solved-state recognition, shared tournaments, custom
-equations, example switching, and cross-example response isolation.
+equations, example switching, and cross-example response isolation. Lambda
+coverage includes exact parsing, capture-avoiding substitution, redex menus,
+representation limits, normal-form recognition, and guided versus model-only
+selection.
 Browser-state tests use Node.js 18 or later with no npm dependencies;
 Node.js is not required to run the app.
 
@@ -999,6 +1099,6 @@ informed by the current state, target,
 recent derivation, and move descriptions.
 
 For MIU, the project contrasts step-by-step model judgment with an invariant
-that settles the impossible `MU` target. Algebra instead supplies reachable
-equations with different valid derivations. Both are experiments in constrained
+that settles the impossible `MU` target. Algebra and lambda instead supply
+reachable problems with different valid reductions. All three are experiments in constrained
 step selection, not evidence that a model improves on deterministic methods.
