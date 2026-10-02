@@ -198,6 +198,29 @@ test("landing page launches MIU as the historical inspiration", async () => {
   assert.equal(app.nodes.get("exampleTitle").textContent, "MIU");
 });
 
+test("choosing an application again preserves and resumes the derivation", async () => {
+  const app = await createApp();
+  app.nodes.get("launchAlgebra").click();
+  await app.movesResponse();
+  app.run("applyMove(state.moves[1])");
+  await app.movesResponse();
+  assert.equal(app.state.current, "x + 3 = 7");
+
+  app.nodes.get("chooseApp").click();
+  assert.ok(!app.nodes.get("landing").classList.contains("hidden"));
+  assert.ok(app.nodes.get("appStage").classList.contains("hidden"));
+  assert.equal(app.state.current, "x + 3 = 7");
+  assert.ok(!app.nodes.get("landingResume").classList.contains("hidden"));
+  assert.equal(app.nodes.get("exampleTitle").textContent, "Formalism");
+
+  app.nodes.get("resumeApp").click();
+  assert.ok(app.nodes.get("landing").classList.contains("hidden"));
+  assert.ok(!app.nodes.get("appStage").classList.contains("hidden"));
+  assert.equal(app.state.current, "x + 3 = 7");
+  assert.equal(app.state.system, "algebra");
+  assert.equal(app.nodes.get("exampleTitle").textContent, "Algebra");
+});
+
 test("manual moves lock transitions and reject obsolete menu entries", async () => {
   const app = await createApp();
   const [append, duplicate] = app.nodes.get("moves").children;

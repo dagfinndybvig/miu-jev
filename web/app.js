@@ -18,6 +18,7 @@ const state = {
   nextEventId: 1,
   storageAvailable: true,
   launched: false,
+  onLanding: true,
 };
 const SERVER_MAX_LENGTH = 8192;
 const JOURNAL_KEY = "miu-decision-journal-v1";
@@ -67,6 +68,9 @@ const elements = {
   loadEquation: $("loadEquation"),
   exploreSetting: $("exploreSetting"),
   landing: $("landing"),
+  chooseApp: $("chooseApp"),
+  landingResume: $("landingResume"),
+  resumeApp: $("resumeApp"),
   launchAlgebra: $("launchAlgebra"),
   launchMiu: $("launchMiu"),
   landingNotice: $("landingNotice"),
@@ -344,6 +348,7 @@ function setBusy(busy) {
   elements.jevStep.disabled = busy || state.auto || unavailable || solvedAlgebra || state.moves.length === 0;
   elements.launchAlgebra.disabled = busy || state.auto;
   elements.launchMiu.disabled = busy || state.auto;
+  elements.chooseApp.disabled = busy || state.auto;
   elements.autoRun.disabled = !state.auto && (busy || unavailable || solvedAlgebra || state.moves.length === 0);
   elements.undo.disabled = busy || state.auto || state.history.length <= 1;
   elements.reset.disabled = busy;
@@ -366,10 +371,11 @@ function setBusy(busy) {
 
 function render() {
   const algebraMode = state.system === "algebra";
-  elements.landing.classList.toggle("hidden", state.launched);
-  for (const view of APP_VIEWS) view.classList.toggle("hidden", !state.launched);
+  elements.landing.classList.toggle("hidden", !state.onLanding);
+  for (const view of APP_VIEWS) view.classList.toggle("hidden", state.onLanding);
+  elements.landingResume.classList.toggle("hidden", !(state.launched && state.onLanding));
   elements.example.value = state.system;
-  elements.exampleTitle.textContent = state.launched ? EXAMPLES[state.system].title : "Formalism";
+  elements.exampleTitle.textContent = state.onLanding ? "Formalism" : EXAMPLES[state.system].title;
   elements.currentLabel.textContent = algebraMode ? "CURRENT EQUATION" : "CURRENT STRING";
   elements.metricLabel.textContent = algebraMode ? "PROGRESS COST" : "#I MOD 3";
   elements.equationEditor.classList.toggle("hidden", !algebraMode);
@@ -756,6 +762,20 @@ async function autoRun() {
   render();
 }
 
+function showLanding() {
+  if (state.busy || state.auto || !state.launched) return;
+  setError();
+  setRunNotice();
+  state.onLanding = true;
+  render();
+}
+
+function resumeCurrentApp() {
+  if (!state.launched) return;
+  state.onLanding = false;
+  render();
+}
+
 async function launchApp(system) {
   if (state.busy || state.auto || !Object.hasOwn(EXAMPLES, system)) return;
   setError();
@@ -764,6 +784,7 @@ async function launchApp(system) {
   const loaded = await loadExample(system);
   if (loaded) {
     state.launched = true;
+    state.onLanding = false;
   } else {
     elements.landingNotice.textContent =
       elements.error.textContent || "The selected example could not be loaded.";
@@ -774,6 +795,8 @@ async function launchApp(system) {
 
 elements.launchAlgebra.addEventListener("click", () => launchApp("algebra"));
 elements.launchMiu.addEventListener("click", () => launchApp("miu"));
+elements.chooseApp.addEventListener("click", showLanding);
+elements.resumeApp.addEventListener("click", resumeCurrentApp);
 elements.jevStep.addEventListener("click", () => jevStep());
 elements.autoRun.addEventListener("click", autoRun);
 elements.undo.addEventListener("click", async () => {

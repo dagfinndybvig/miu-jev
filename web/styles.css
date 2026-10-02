@@ -94,7 +94,8 @@ h1 .example-title { color: var(--text); }
 
 .stage { padding: 28px; }
 .example-picker { margin-bottom: 22px; }
-.example-picker select { margin-top: 8px; max-width: 460px; display: block; }
+.example-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; max-width: 560px; }
+.example-actions select { flex: 1; min-width: 200px; max-width: 460px; }
 .equation-editor { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 24px; align-items: center; }
 .equation-editor label, .equation-editor p { flex-basis: 100%; }
 .equation-editor input { flex: 1; min-width: 180px; font-family: "Cascadia Code", Consolas, monospace; }
@@ -343,6 +344,7 @@ h2 { margin: 5px 0 0; font-size: 1rem; }
 .landing-cta { justify-self: start; padding: 9px 14px; border: 1px solid var(--line); border-radius: 8px; font-size: 0.85rem; }
 .landing-card.primary .landing-cta { border-color: var(--acid); background: var(--acid); color: #111; }
 .landing-note { margin: 18px 0 0; }
+.landing-resume { margin-top: 14px; }
 
 @media (max-width: 760px) {
   .shell { width: min(100% - 20px, 1180px); padding-top: 24px; }

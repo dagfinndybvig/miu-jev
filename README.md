@@ -577,7 +577,10 @@ The browser UI provides:
 - a **landing page** that opens on launch and offers **Algebra × Jev** as the
   main feature and **MIU × Jev** as the historical inspiration, with highlights
   from this README; a launch starts the selected example, and the Example menu
-  switches between them at any time;
+  switches between them at any time. The **Choose application** control
+  returns to the landing without discarding the active derivation, and
+  **Continue the current derivation** resumes it; choosing a card starts that
+  example fresh;
 - an **Example** menu for the MU puzzle and linear equations;
 - editable starting equations in algebra, with **Load equation**;
 - **Request one decision** to evaluate the current menu using the selected policy;

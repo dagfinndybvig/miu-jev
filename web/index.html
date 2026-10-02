@@ -64,16 +64,22 @@
             Both applications share the same decision provider, controls, and
             decision log. Switch between them at any time from the Example menu.
           </p>
-          <p class="error hidden" id="landingNotice" role="status"></p>
+          <div class="landing-resume hidden" id="landingResume">
+              <button id="resumeApp">Continue the current derivation</button>
+            </div>
+            <p class="error hidden" id="landingNotice" role="status"></p>
         </section>
 
         <section class="stage panel" id="appStage">
           <div class="example-picker">
             <label for="example">EXAMPLE</label>
+            <div class="example-actions">
             <select id="example">
               <option value="miu">MIU · the MU puzzle</option>
               <option value="algebra">Algebra · solve a linear equation</option>
             </select>
+            <button id="chooseApp">Choose application</button>
+            </div>
             <p class="journal-help">Changing examples starts a new derivation. Provider settings and the decision log are shared.</p>
           </div>
           <div class="equation-editor hidden" id="equationEditor">
