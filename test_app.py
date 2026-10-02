@@ -478,7 +478,8 @@ class HttpApiTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(payload["system"], "algebra")
         self.assertEqual(payload["goal"], algebra.GOAL)
-        self.assertEqual(payload["move"]["result"], "x + 3 = 7")
+        self.assertEqual(payload["policy"], "model")
+        self.assertEqual(payload["move"]["result"], "2 * x + 6 = 14")
         self.assertFalse(payload["analysis"]["solved"])
         self.assertNotIn("x = 999", [move["result"] for move in payload["moves"]])
 
