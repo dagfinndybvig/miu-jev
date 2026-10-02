@@ -192,6 +192,88 @@ What the app reveals instead is the model's behavior inside an impossible
 search: whether it favors growth, contraction, novelty, repeated states, or
 apparently goal-like strings.
 
+## Where Jev came from: TypeSafe AI and TypeScript
+
+The starting point for this project was [Jev][jev], the System One decision
+model released by **TypeSafe AI** in September 2026. Jev is designed for a
+different software role than a conversational language model. Instead of
+generating prose, it evaluates some supplied state against explicitly typed
+questions and returns answers constrained to the declared schema.
+
+Jev exposes three main decision primitives:
+
+- **choice** selects one key from a finite set and returns a probability
+  distribution across all allowed keys;
+- **score** evaluates the state against an ordered rubric and returns a
+  probability-weighted score; and
+- **boolean**—called `noul` in some compatible interfaces—returns the
+  probability that a stated condition is true.
+
+This style is especially natural in TypeScript. Through the official
+[`@typesafe-ai/sdk`][typesafe-sdk], or through
+[Vercel AI SDK's evaluation interface][vercel-jev], the keys in a choice schema
+become a TypeScript union in the answer. If an application declares:
+
+```typescript
+const result = await evaluate({
+  model: "typesafe-ai/jev",
+  state: currentMiuState,
+  questions: {
+    nextMove: {
+      type: "choice",
+      instructions: "Which legal rewrite should be applied next?",
+      criteria: {
+        rule1AtEnd: "Append U because the string ends in I",
+        rule2: "Duplicate the tail after M",
+      },
+    },
+  },
+});
+```
+
+then `result.answers.nextMove.choice` is constrained to
+`"rule1AtEnd" | "rule2"`. The model cannot answer with an undeclared third
+action or an arbitrary sentence. The schema becomes the boundary between
+probabilistic judgment and ordinary application code.
+
+That was the conceptual beginning of MIU × Jev. The MIU engine already has a
+perfectly defined, finite action schema at every step: the complete set of
+legal rewrites. A typed decision model can therefore choose among those
+actions without being entrusted with constructing them. It is a particularly
+literal demonstration of TypeSafe AI's core pattern:
+
+> Put the state and permitted outcomes in code; ask the model only for the
+> judgment between them.
+
+### Jev, Nimble, and this implementation
+
+The names are related but not interchangeable:
+
+| Component | Role |
+|---|---|
+| **Jev** | TypeSafe AI's hosted System One decision model and the original inspiration for this experiment. |
+| **TypeScript SDK** | A type-safe way for JavaScript and TypeScript applications to define Jev questions and consume constrained answers. |
+| **Nimble** | [Bespoke Labs' open decision model][nimble], trained for the same broad class of schema-bound judgments. |
+| **Ollama System One** | The local API used here to run `nimble:latest` and obtain typed choices and probabilities. |
+
+MIU × Jev currently runs **Nimble locally through Ollama**, not the hosted Jev
+service. The UI keeps the name “Jev” because the project began with the Jev
+interaction pattern: present state plus a typed menu, receive a probabilistic
+decision, and leave execution to deterministic code. Local Nimble makes that
+experiment self-contained and keeps every derivation on the user's machine.
+
+Jev's structural guarantees should not be confused with semantic infallibility.
+A typed decision model cannot return a malformed answer or an option outside
+the menu, but it can confidently select a poor option inside the menu. In this
+project that distinction is visible by design: the formal engine guarantees
+that every selected move is legal, while the derivation history reveals
+whether the model's strategy is useful.
+
+[jev]: https://jevapi.dev/
+[typesafe-sdk]: https://www.npmjs.com/package/@typesafe-ai/sdk
+[vercel-jev]: https://vercel.com/kb/guide/typesafe-jev-and-ai-sdk
+[nimble]: https://github.com/bespokelabsai/nimble
+
 ## User interface
 
 The browser UI provides:
