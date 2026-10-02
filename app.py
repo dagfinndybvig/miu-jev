@@ -17,6 +17,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 import algebra
+import lambda_calc
 
 
 ROOT = Path(__file__).resolve().parent
@@ -33,12 +34,12 @@ MAX_MIU_LENGTH = 8_192
 MAX_HISTORY_ENTRIES = 1_024
 CHOICE_KEYS = string.ascii_uppercase
 PROVIDER_CHOICE_LIMITS = {"ollama": len(CHOICE_KEYS), "typesafe": 255}
-SYSTEMS = ("miu", "algebra")
+SYSTEMS = ("miu", "algebra", "lambda")
 
 
 def validate_system(value: Any) -> str:
     if not isinstance(value, str) or value not in SYSTEMS:
-        raise ValueError("system must be miu or algebra")
+        raise ValueError("system must be miu, algebra, or lambda")
     return value
 
 
@@ -182,6 +183,9 @@ def validate_history(history: list[str], system: str) -> None:
     if system == "algebra":
         for item in history:
             algebra.parse_equation(item)
+    elif system == "lambda":
+        for item in history:
+            lambda_calc.parse_term(item)
     else:
         for item in history:
             validate_miu(item, "history")
@@ -348,6 +352,8 @@ def decision_request(
         ) if system == "miu" else (
             f"position: {move['position']}; justification: {move['detail']}; "
             f"solved: {move['solved']}; structural progress cost: {move['progress']}; "
+            + (f"duplication cost: {move['duplication']}; redexes after: {move['redexes']}; "
+               if system == "lambda" else "")
         )
         criteria[key] = (
             f"{move['label']}; result: {move['result']}; "
@@ -399,6 +405,31 @@ def decision_request(
             "Choose one supplied equivalent rewrite that makes a short, clear derivation "
             "toward an isolated x or a numeric identity/contradiction. "
             "Do not invent an equation or a transformation."
+        )
+    elif system == "lambda":
+        state = {
+            "formal_system": "Untyped lambda calculus under beta reduction",
+            "current_term": current, "goal": goal,
+            "recent_derivation": history[-12:], "candidate_moves": criteria,
+            "invariant": (
+                "Every candidate is a single capture-avoiding beta contraction at a "
+                "marked position. The server performs the substitution, so each step "
+                "preserves the term's equivalence class by construction."
+            ),
+            "search_guidance": (
+                "Leftmost-outermost (normal-order) reduction reaches a normal form "
+                "whenever one exists; reducing inner redexes first can diverge where "
+                "outer order terminates. Prefer outer redexes and results that are "
+                "normal forms. Be cautious contracting a redex whose bound variable "
+                "occurs more than once while the argument is large, because the "
+                "substitution duplicates that work. Normalization is undecidable in "
+                "general, so budget stops are inconclusive rather than proofs. The "
+                "menu lists every redex; do not invent a term or transformation."
+            ),
+        }
+        instructions = (
+            "Choose the supplied beta contraction that most directly progresses "
+            "toward the normal-form goal. Do not invent a term or a transformation."
         )
     request_body: dict[str, Any] = {
         "model": model,
@@ -477,7 +508,11 @@ def decision_request(
             raise RuntimeError(f"{provider_name} returned an invalid probability")
         probabilities[by_key[key]["id"]] = probability
     selection: dict[str, Any] = {}
-    selector = select_move if system == "miu" else algebra.select_move
+    selector = (
+        select_move if system == "miu"
+        else algebra.select_move if system == "algebra"
+        else lambda_calc.select_move
+    )
     selected = selector(
         policy,
         current,
@@ -637,6 +672,9 @@ class RequestHandler(BaseHTTPRequestHandler):
                 if system == "algebra":
                     self.send_json(algebra.describe(payload.get("current")))
                     return
+                if system == "lambda":
+                    self.send_json(lambda_calc.describe(payload.get("current")))
+                    return
                 current = validate_miu(payload.get("current"), "current")
                 self.send_json({"system": system, "current": current, "moves": legal_moves(current)})
                 return
@@ -647,6 +685,13 @@ class RequestHandler(BaseHTTPRequestHandler):
                     goal = payload.get("goal", algebra.GOAL)
                     if goal != algebra.GOAL:
                         raise ValueError(f"Algebra goal must be {algebra.GOAL}")
+                    moves = analysis["moves"]
+                elif system == "lambda":
+                    analysis = lambda_calc.describe(payload.get("current"))
+                    current = analysis["current"]
+                    goal = payload.get("goal", lambda_calc.GOAL)
+                    if goal != lambda_calc.GOAL:
+                        raise ValueError(f"Lambda goal must be {lambda_calc.GOAL}")
                     moves = analysis["moves"]
                 else:
                     current = validate_miu(payload.get("current"), "current")
@@ -662,7 +707,11 @@ class RequestHandler(BaseHTTPRequestHandler):
                     raise ValueError("policy must be guided or model")
                 history = payload.get("history", [])
                 max_length = payload.get("max_length", 64)
-                absolute_limit = algebra.MAX_LENGTH if system == "algebra" else MAX_MIU_LENGTH
+                absolute_limit = {
+                    "miu": MAX_MIU_LENGTH,
+                    "algebra": algebra.MAX_LENGTH,
+                    "lambda": lambda_calc.MAX_CHARS,
+                }[system]
                 if not isinstance(model, str) or not model.strip():
                     raise ValueError("model must be a non-empty string")
                 if not isinstance(history, list) or not all(

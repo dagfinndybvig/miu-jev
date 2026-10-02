@@ -8,6 +8,7 @@ from http.server import ThreadingHTTPServer
 from unittest.mock import patch
 
 import algebra
+import lambda_calc
 
 from app import (
     MAX_MIU_LENGTH,
@@ -425,6 +426,40 @@ class HttpApiTests(unittest.TestCase):
         self.assertFalse(payload["analysis"]["solved"])
         self.assertNotIn("x = 999", [move["result"] for move in payload["moves"]])
 
+    def test_lambda_moves_normalize_and_report_goal_state(self):
+        status, payload = self.request("POST", "/api/moves", {
+            "system": "lambda", "current": "(\\x. x x) (\\y. y)",
+        })
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["system"], "lambda")
+        self.assertEqual(payload["current"], "(λx.x x) (λy.y)")
+        self.assertFalse(payload["solved"])
+        self.assertEqual(payload["redexes"], 1)
+        self.assertEqual(payload["moves"][0]["result"], "(λy.y) (λy.y)")
+        self.assertEqual(payload["solution_kind"], "reducible")
+        status, payload = self.request("POST", "/api/moves", {
+            "system": "lambda", "current": "λx.x",
+        })
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["solved"])
+        self.assertEqual(payload["solution_kind"], "normal")
+        self.assertEqual(payload["moves"], [])
+
+    def test_lambda_choose_recomputes_equivalent_moves(self):
+        with patch("app.decision_request") as decide:
+            status, payload = self.request("POST", "/api/choose", {
+                "system": "lambda", "current": "(\\x. x x) (\\y. y)",
+                "moves": [{"id": "move-0", "result": "λz.z"}],
+                "history": ["(λx.x x) (λy.y)"],
+            })
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["system"], "lambda")
+        self.assertEqual(payload["goal"], lambda_calc.GOAL)
+        self.assertEqual(payload["move"]["result"], "(λy.y) (λy.y)")
+        self.assertNotIn("λz.z", [move["result"] for move in payload["moves"]])
+        self.assertFalse(payload["analysis"]["solved"])
+        decide.assert_not_called()
+
     @patch("app.decision_request")
     def test_invalid_systems_and_algebra_inputs_are_bad_requests(self, decide):
         for body in (
@@ -435,6 +470,10 @@ class HttpApiTests(unittest.TestCase):
             {"system": "algebra", "current": "x/0=1"},
             {"system": "algebra", "current": "2*x=4", "goal": "x = 2"},
             {"system": "algebra", "current": "2*x=4", "max_length": 513},
+            {"system": "lambda", "current": "x+"},
+            {"system": "lambda", "current": "λx"},
+            {"system": "lambda", "current": "(λx.x) y", "goal": "x"},
+            {"system": "lambda", "current": "λx.x", "history": ["λx.x", "x+1"]},
         ):
             with self.subTest(body=body):
                 status, payload = self.request("POST", "/api/choose", body)
