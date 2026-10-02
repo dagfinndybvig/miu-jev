@@ -242,10 +242,15 @@ async function autoRun() {
   if (goalICount % 3 === 0 && !elements.exploreImpossible.checked) {
     state.auto = false;
     setRunNotice(
-      `Auto-run skipped: the modulo-3 invariant proves ${goal} is unreachable from MI. Enable impossible-target exploration to override.`,
+      `Auto-run skipped: the modulo-3 invariant proves ${goal} is unreachable from MI. Enable exploratory auto-run to override.`,
     );
     render();
     return;
+  }
+  if (goalICount % 3 === 0) {
+    setRunNotice(
+      `Exploratory run: the modulo-3 invariant proves ${goal} is unreachable. The run will stop on its safety budgets.`,
+    );
   }
   const startingStep = state.history.length - 1;
   const maxSteps = Math.max(

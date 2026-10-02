@@ -547,9 +547,12 @@ server additionally rejects MIU strings over 8,192 characters to bound request
 and rendering costs.
 
 Before auto-run begins, the app applies the modulo-three invariant. A target
-such as `MU`, with zero `I` symbols, is rejected immediately because no search
-can reach it from `MI`. Users may explicitly enable impossible-target
-exploration when they want to observe model behavior despite the proof.
+such as `MU`, with zero `I` symbols, is marked as unreachable because no search
+can reach it from `MI`. Exploratory auto-run is enabled by default because
+observing model behavior inside that impossible search is a central purpose of
+the project. The UI warns that the target cannot be reached, then relies on the
+step, length, cycle, and stagnation budgets to stop safely. Users may disable
+the exploratory override when they want impossible targets rejected outright.
 
 ### Guided selection heuristics
 

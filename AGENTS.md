@@ -176,8 +176,10 @@ from TypeSafe to Ollama 0.35.0+ or vice versa.
   reaching the target, exhausting its step budget, selecting an over-limit
   next string, selecting an already visited state, or exhausting its
   no-progress budget.
-- Auto-run must preflight the modulo-three invariant and refuse a provably
-  unreachable target unless the user explicitly enables exploratory override.
+- Auto-run must preflight the modulo-three invariant. Exploratory override is
+  enabled by default so the `MI → MU` experiment runs out of the box; show a
+  clear impossibility warning and rely on safety budgets. When the user
+  disables the override, refuse a provably unreachable target.
 - The default model-move length budget is 64 characters. Pass it to
   `/api/choose` as `max_length`; guided selection should prefer an in-budget
   move whenever one exists.
