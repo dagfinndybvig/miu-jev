@@ -483,6 +483,7 @@ The browser UI provides:
 - stagnation detection based on edit distance to the target;
 - automatic stopping before cycles or over-limit growth;
 - locked manual move controls while a model decision or auto-run is active;
+- a header indicator that tracks the selected provider and model;
 - a provider switch between local Ollama 0.35.0+/Nimble and hosted TypeSafe/Jev;
 - a **guided** reduction-first policy and a **model only** comparison mode;
 - the complete menu of legal rewrites at every step;

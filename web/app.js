@@ -31,6 +31,7 @@ const elements = {
   thinking: $("thinking"),
   error: $("errorBox"),
   status: $("engineStatus"),
+  statusText: $("engineStatusText"),
   delay: $("delay"),
   maxSteps: $("maxSteps"),
   maxLength: $("maxLength"),
@@ -92,6 +93,15 @@ function updateInvariantNotice() {
     iCount % 3 === 0
       ? `Invariant watch: ${goal} has ${iCount} I symbol${iCount === 1 ? "" : "s"}, so it is unreachable from MI.`
       : `Invariant watch: ${goal} is not ruled out by the modulo-3 test; a derivation is still not guaranteed.`;
+}
+
+function updateEngineStatus() {
+  const provider = state.providers[elements.provider.value];
+  if (!provider) return;
+  const providerName =
+    elements.provider.value === "typesafe" ? "TypeSafe" : "Ollama";
+  const model = elements.model.value.trim() || provider.default_model;
+  elements.statusText.textContent = `${providerName} · ${model}`;
 }
 
 function setBusy(busy) {
@@ -351,9 +361,10 @@ elements.provider.addEventListener("change", () => {
   const provider = state.providers[elements.provider.value];
   if (provider) {
     elements.model.value = provider.default_model;
-    elements.status.lastElementChild.textContent = provider.label;
+    updateEngineStatus();
   }
 });
+elements.model.addEventListener("input", updateEngineStatus);
 
 async function boot() {
   try {
@@ -369,11 +380,10 @@ async function boot() {
     elements.provider.value = payload.default_provider;
     elements.model.value = state.providers[payload.default_provider].default_model;
     elements.status.classList.add("online");
-    elements.status.lastElementChild.textContent =
-      state.providers[payload.default_provider].label;
+    updateEngineStatus();
     await refreshMoves();
   } catch {
-    elements.status.lastElementChild.textContent = "Engine unavailable";
+    elements.statusText.textContent = "Engine unavailable";
     setError("Could not connect to the local MIU server.");
   }
 }
