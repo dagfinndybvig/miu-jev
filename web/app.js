@@ -2,10 +2,14 @@ const state = {
   current: "MI",
   history: [{ value: "MI", label: "Axiom" }],
   moves: [],
+  revision: 0,
+  movesRevision: null,
+  movesRequest: 0,
   probabilities: {},
   selectedId: null,
   busy: false,
   auto: false,
+  autoRunId: 0,
   providers: {},
 };
 const SERVER_MAX_LENGTH = 8192;
@@ -97,18 +101,28 @@ function updateInvariantNotice() {
 
 function updateEngineStatus() {
   const provider = state.providers[elements.provider.value];
-  if (!provider) return;
+  elements.status.classList.toggle("online", Boolean(provider?.available));
+  if (!provider) {
+    elements.statusText.textContent = "Engine unavailable";
+    return;
+  }
   const providerName =
     elements.provider.value === "typesafe" ? "TypeSafe" : "Ollama";
   const model = elements.model.value.trim() || provider.default_model;
-  elements.statusText.textContent = `${providerName} · ${model}`;
+  const availability = provider.available
+    ? ""
+    : ` · unavailable: ${provider.error || "not configured"}`;
+  elements.statusText.textContent = `${providerName} · ${model}${availability}`;
+  setBusy(state.busy);
 }
 
 function setBusy(busy) {
   state.busy = busy;
   elements.thinking.classList.toggle("hidden", !busy);
-  elements.jevStep.disabled = busy || state.auto || state.moves.length === 0;
-  elements.undo.disabled = busy || state.history.length <= 1;
+  const unavailable = !state.providers[elements.provider.value]?.available;
+  elements.jevStep.disabled = busy || state.auto || unavailable || state.moves.length === 0;
+  elements.autoRun.disabled = !state.auto && (busy || unavailable || state.moves.length === 0);
+  elements.undo.disabled = busy || state.auto || state.history.length <= 1;
   elements.reset.disabled = busy;
   elements.goal.disabled = busy || state.auto;
   elements.model.disabled = busy || state.auto;
@@ -174,31 +188,71 @@ function render() {
 }
 
 async function refreshMoves() {
-  const payload = await api("/api/moves", { current: state.current });
-  state.moves = payload.moves;
+  const revision = state.revision;
+  const request = ++state.movesRequest;
+  state.moves = [];
+  state.movesRevision = null;
   state.probabilities = {};
   state.selectedId = null;
   render();
+  const payload = await api("/api/moves", { current: state.current });
+  if (revision !== state.revision || request !== state.movesRequest) return false;
+  state.moves = payload.moves;
+  state.movesRevision = revision;
+  render();
+  return true;
+}
+
+function stopAutoRun() {
+  state.auto = false;
+  state.autoRunId += 1;
+}
+
+async function setHistory(history) {
+  const wasBusy = state.busy;
+  setBusy(true);
+  state.history = history;
+  state.current = history.at(-1).value;
+  state.revision += 1;
+  try {
+    return await refreshMoves();
+  } catch (error) {
+    setError(error.message);
+    stopAutoRun();
+    return false;
+  } finally {
+    setBusy(wasBusy);
+    render();
+  }
 }
 
 async function applyMove(move, source = "Manual choice") {
+  if (state.movesRevision !== state.revision || !state.moves.includes(move)) {
+    setError("Move discarded because its legal menu is no longer current.");
+    return false;
+  }
   if (move.result.length > SERVER_MAX_LENGTH) {
     setError(
       `That move would exceed the server limit of ${SERVER_MAX_LENGTH} characters.`,
     );
     return false;
   }
-  state.current = move.result;
-  state.history.push({ value: move.result, label: `${move.label} · ${source}` });
-  state.selectedId = move.id;
-  render();
-  await refreshMoves();
-  return true;
+  setError();
+  return setHistory([
+    ...state.history,
+    { value: move.result, label: `${move.label} · ${source}` },
+  ]);
 }
 
-async function jevStep(autoMode = false) {
-  if (state.busy || !state.moves.length) return false;
+async function jevStep(runId = null) {
+  const autoMode = runId !== null;
+  if (state.busy || !state.moves.length || (state.auto && !autoMode)) return false;
+  if (!state.providers[elements.provider.value]?.available) {
+    updateEngineStatus();
+    return false;
+  }
   const requestedCurrent = state.current;
+  const requestedRevision = state.revision;
   const goal = elements.goal.value.trim().toUpperCase();
   if (!validMiu(goal)) {
     setError("Target must contain only M, I, and U.");
@@ -219,12 +273,14 @@ async function jevStep(autoMode = false) {
         Math.min(SERVER_MAX_LENGTH, Number(elements.maxLength.value) || 64),
       ),
     });
-    if (state.current !== requestedCurrent) {
+    if (autoMode && (!state.auto || state.autoRunId !== runId)) return false;
+    if (state.revision !== requestedRevision || state.current !== requestedCurrent) {
       setRunNotice("Decision discarded because the current string changed.");
-      state.auto = false;
+      stopAutoRun();
       return false;
     }
     state.moves = payload.moves;
+    state.movesRevision = requestedRevision;
     state.selectedId = payload.move.id;
     state.probabilities = Object.assign(
       {},
@@ -232,15 +288,17 @@ async function jevStep(autoMode = false) {
     );
     render();
     await new Promise((resolve) => setTimeout(resolve, state.auto ? 100 : 450));
-    if (autoMode && !state.auto) {
-      setRunNotice("Auto-run stopped.");
+    if (autoMode && (!state.auto || state.autoRunId !== runId)) return false;
+    if (state.revision !== requestedRevision || state.current !== requestedCurrent) {
+      setRunNotice("Decision discarded because the current string changed.");
+      stopAutoRun();
       return false;
     }
     if (payload.move.result.length > Number(elements.maxLength.value)) {
       setRunNotice(
         `Model move not applied: it would grow the string to ${payload.move.result.length} characters.`,
       );
-      state.auto = false;
+      stopAutoRun();
       return false;
     }
     if (
@@ -248,31 +306,38 @@ async function jevStep(autoMode = false) {
       state.history.some((entry) => entry.value === payload.move.result)
     ) {
       setRunNotice("Auto-run stopped before revisiting an earlier string.");
-      state.auto = false;
+      stopAutoRun();
       return false;
     }
     const providerName =
       payload.provider === "typesafe" ? "TypeSafe Jev" : "Local Nimble";
     const source =
       payload.policy === "guided" ? `${providerName} · guided` : `${providerName} · model only`;
-    return await applyMove(payload.move, source);
+    const move = state.moves.find((candidate) => candidate.id === payload.move.id);
+    if (!move) throw new Error("Decision returned a move outside the legal menu.");
+    return await applyMove(move, source);
   } catch (error) {
     setError(error.message);
-    state.auto = false;
+    stopAutoRun();
     render();
     return false;
   } finally {
     setBusy(false);
+    render();
   }
 }
 
 async function autoRun() {
   if (state.busy && !state.auto) return;
-  state.auto = !state.auto;
-  if (!state.auto) {
+  if (state.auto) {
+    stopAutoRun();
+    setRunNotice("Auto-run stopped.");
     render();
     return;
   }
+  if (!state.providers[elements.provider.value]?.available || !state.moves.length) return;
+  state.auto = true;
+  const runId = ++state.autoRunId;
   setError();
   setRunNotice();
   const goal = elements.goal.value.trim().toUpperCase();
@@ -314,7 +379,8 @@ async function autoRun() {
       setRunNotice(`Auto-run stopped after its ${maxSteps}-step budget.`);
       break;
     }
-    const moved = await jevStep(true);
+    const moved = await jevStep(runId);
+    if (state.autoRunId !== runId) return;
     if (!moved) break;
     const distance = targetDistance(state.current, goal);
     if (distance < bestDistance) {
@@ -330,28 +396,27 @@ async function autoRun() {
       break;
     }
     await new Promise((resolve) => setTimeout(resolve, Number(elements.delay.value)));
+    if (state.autoRunId !== runId) return;
   }
   state.auto = false;
   render();
 }
 
-elements.jevStep.addEventListener("click", () => jevStep(false));
+elements.jevStep.addEventListener("click", () => jevStep());
 elements.autoRun.addEventListener("click", autoRun);
 elements.undo.addEventListener("click", async () => {
-  if (state.history.length <= 1 || state.busy) return;
-  state.history.pop();
-  state.current = state.history.at(-1).value;
+  if (state.history.length <= 1 || state.busy || state.auto) return;
+  stopAutoRun();
   setError();
   setRunNotice();
-  await refreshMoves();
+  await setHistory(state.history.slice(0, -1));
 });
 elements.reset.addEventListener("click", async () => {
-  state.auto = false;
-  state.current = "MI";
-  state.history = [{ value: "MI", label: "Axiom" }];
+  if (state.busy) return;
+  stopAutoRun();
   setError();
   setRunNotice();
-  await refreshMoves();
+  await setHistory([{ value: "MI", label: "Axiom" }]);
 });
 elements.goal.addEventListener("input", () => {
   elements.goal.value = elements.goal.value.toUpperCase().replace(/[^MIU]/g, "");
@@ -367,6 +432,7 @@ elements.provider.addEventListener("change", () => {
 elements.model.addEventListener("input", updateEngineStatus);
 
 async function boot() {
+  setBusy(true);
   try {
     const health = await fetch("/api/health");
     if (!health.ok) throw new Error();
@@ -375,16 +441,23 @@ async function boot() {
     for (const option of elements.provider.options) {
       const provider = state.providers[option.value];
       option.disabled = !provider?.available;
-      if (!provider?.available) option.textContent += " · not configured";
+      if (!provider?.available) option.textContent += " · unavailable";
     }
     elements.provider.value = payload.default_provider;
     elements.model.value = state.providers[payload.default_provider].default_model;
-    elements.status.classList.add("online");
     updateEngineStatus();
-    await refreshMoves();
   } catch {
+    elements.status.classList.remove("online");
     elements.statusText.textContent = "Engine unavailable";
     setError("Could not connect to the local MIU server.");
+  }
+  try {
+    await refreshMoves();
+  } catch (error) {
+    setError(error.message);
+  } finally {
+    setBusy(false);
+    render();
   }
 }
 

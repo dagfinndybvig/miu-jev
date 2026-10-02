@@ -28,6 +28,7 @@ python -m unittest -v
 # Syntax checks
 python -m py_compile app.py test_app.py
 node --check web\app.js
+node --test test_web.js
 ```
 
 The app listens at <http://127.0.0.1:8765> by default. It intentionally has no
@@ -38,6 +39,7 @@ Python package dependencies and no frontend build step.
 ```text
 app.py          MIU rules, provider clients, HTTP API, static file server
 test_app.py     unit tests for rules, provider limits, and configuration
+test_web.js     browser-state regression tests using Node.js built-ins
 web/index.html  page structure and settings
 web/styles.css  responsive presentation
 web/app.js      browser state, API calls, controls, and rendering
@@ -168,6 +170,8 @@ from TypeSafe to Ollama 0.35.0+ or vice versa.
 ## Frontend gotchas
 
 - Provider availability comes from `/api/health`.
+- Keep Ollama selected by default even when unavailable; hosted requests
+  require an explicit provider switch.
 - Selecting a provider updates its default model.
 - Keep the header status indicator synchronized with the selected provider and
   editable model value.
@@ -214,6 +218,7 @@ At minimum, run:
 python -m unittest -v
 python -m py_compile app.py test_app.py
 node --check web\app.js
+node --test test_web.js
 ```
 
 For provider changes, also perform one live `/api/choose` request for each

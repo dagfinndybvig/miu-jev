@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import mimetypes
 import os
 import re
@@ -361,16 +362,34 @@ def decision_request(
         ) from error
     except urllib.error.URLError as error:
         raise RuntimeError(f"Could not reach {provider_name}: {error.reason}") from error
+    except (json.JSONDecodeError, UnicodeDecodeError) as error:
+        raise RuntimeError(f"{provider_name} returned invalid JSON") from error
 
-    answer = payload.get("answers", {}).get("next_move", {})
+    answers = payload.get("answers") if isinstance(payload, dict) else None
+    answer = answers.get("next_move") if isinstance(answers, dict) else None
+    if not isinstance(answer, dict):
+        raise RuntimeError(f"{provider_name} returned an invalid decision response")
     selected_key = answer.get("choice")
-    if selected_key not in by_key:
+    if not isinstance(selected_key, str) or selected_key not in by_key:
         raise RuntimeError(f"{provider_name} returned an invalid move choice")
-    probabilities = {
-        by_key[key]["id"]: float(probability)
-        for key, probability in answer.get("probabilities", {}).items()
-        if key in by_key
-    }
+    raw_probabilities = answer.get("probabilities", {})
+    if not isinstance(raw_probabilities, dict):
+        raise RuntimeError(f"{provider_name} returned invalid probabilities")
+    probabilities: dict[str, float] = {}
+    for key, value in raw_probabilities.items():
+        if key not in by_key:
+            continue
+        if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+            raise RuntimeError(f"{provider_name} returned an invalid probability")
+        try:
+            probability = float(value)
+        except (ValueError, OverflowError) as error:
+            raise RuntimeError(
+                f"{provider_name} returned an invalid probability"
+            ) from error
+        if not math.isfinite(probability) or not 0 <= probability <= 1:
+            raise RuntimeError(f"{provider_name} returned an invalid probability")
+        probabilities[by_key[key]["id"]] = probability
     selected = select_move(
         policy,
         current,
@@ -445,15 +464,10 @@ class RequestHandler(BaseHTTPRequestHandler):
             typesafe_available = bool(
                 os.environ.get("TYPESAFE_API_KEY", "").strip()
             )
-            default_provider = (
-                "ollama"
-                if ollama["compatible"]
-                else "typesafe" if typesafe_available else "ollama"
-            )
             self.send_json(
                 {
                     "ok": True,
-                    "default_provider": default_provider,
+                    "default_provider": DEFAULT_PROVIDER,
                     "providers": {
                         "ollama": {
                             "available": ollama["compatible"],
@@ -497,7 +511,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                 current = validate_miu(payload.get("current"), "current")
                 goal = validate_miu(payload.get("goal", "MU"), "goal")
                 provider = payload.get("provider", DEFAULT_PROVIDER)
-                if provider not in DEFAULT_MODELS:
+                if not isinstance(provider, str) or provider not in DEFAULT_MODELS:
                     raise ValueError("provider must be ollama or typesafe")
                 model = payload.get("model", DEFAULT_MODELS[provider])
                 policy = payload.get("policy", "guided")
@@ -561,7 +575,7 @@ class RequestHandler(BaseHTTPRequestHandler):
     def send_json(
         self, payload: dict[str, Any], status: HTTPStatus = HTTPStatus.OK
     ) -> None:
-        encoded = json.dumps(payload).encode("utf-8")
+        encoded = json.dumps(payload, allow_nan=False).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(encoded)))

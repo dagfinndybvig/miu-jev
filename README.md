@@ -51,6 +51,10 @@ python app.py
 
 Open <http://127.0.0.1:8765>. Use **Settings & rules** to switch providers.
 The browser never receives either provider's credentials.
+Ollama remains selected even when it is unavailable and a TypeSafe key is
+configured. Hosted decisions require an explicit switch to TypeSafe; there is
+no automatic local-to-hosted fallback. Without an available provider, manual
+exploration still works.
 
 ## Provenance: *Gödel, Escher, Bach*
 
@@ -483,7 +487,8 @@ The browser UI provides:
 - stagnation detection based on edit distance to the target;
 - automatic stopping before cycles or over-limit growth;
 - locked manual move controls while a model decision or auto-run is active;
-- a header indicator that tracks the selected provider and model;
+- a header indicator that tracks the selected provider, model, and reported
+  availability, including local-provider errors;
 - a provider switch between local Ollama 0.35.0+/Nimble and hosted TypeSafe/Jev;
 - a **guided** reduction-first policy and a **model only** comparison mode;
 - the complete menu of legal rewrites at every step;
@@ -509,6 +514,7 @@ web/
   styles.css    responsive interface
   app.js        client state and interaction
 test_app.py     rule-engine and selection tests
+test_web.js     browser-state regression tests (Node.js built-ins)
 ```
 
 The Python server is stateless with respect to a run. The browser sends the
@@ -530,6 +536,9 @@ Python MIU engine
 Both providers receive the same semantic state and choice descriptions. Their
 different option limits are handled by the server, so the browser and MIU rule
 engine do not need provider-specific logic.
+Provider responses must select a supplied move and contain finite probabilities
+between zero and one when probabilities are supplied. Malformed responses are
+reported as upstream errors rather than forwarded as invalid JSON.
 
 ### Runaway-search protection
 
@@ -548,11 +557,15 @@ remains visible, and a person may still apply any legal move manually. The
 server additionally rejects MIU strings over 8,192 characters to bound request
 and rendering costs.
 
-While a provider decision is pending, manual move controls are temporarily
-disabled. The browser also records the string used for each request and
-discards the response if that source string changes before the decision can be
-applied. This prevents a delayed provider response from adding a move that was
-legal for an earlier state but not for the current derivation.
+While a provider decision or a replacement legal-menu request is pending,
+manual move controls are temporarily disabled. Each menu and decision is bound
+to a specific derivation revision; obsolete responses cannot replace the
+current menu or add a move from an earlier state. A failed menu refresh leaves
+no stale moves enabled and displays an error; reset or undo can recover.
+
+Stopping or resetting auto-run invalidates that run's pending work. Restarting
+creates a separate run, so an earlier run's timer cannot advance or stop it.
+Undo is disabled during auto-run; stop the run before undoing a move.
 
 Before auto-run begins, the app applies the modulo-three invariant. A target
 such as `MU`, with zero `I` symbols, is marked as unreachable because no search
@@ -672,12 +685,18 @@ python app.py --host 127.0.0.1 --port 9000
 
 ```powershell
 python -m unittest -v
+python -m py_compile app.py test_app.py
+node --check web\app.js
+node --test test_web.js
 ```
 
 The tests cover all four rewrite rules, overlapping pattern positions, input
 validation, required TypeSafe credential handling, the Ollama 0.35.0+
 requirement and 26-choice tournament behavior, and TypeSafe's larger choice
-window.
+window. They also cover HTTP validation, malformed provider responses, explicit
+hosted-provider selection, stale menus, auto-run cancellation, and provider
+status. Browser-state tests use Node.js 18 or later with no npm dependencies;
+Node.js is not required to run the app.
 
 ## Scope
 
