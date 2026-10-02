@@ -9,7 +9,7 @@ step. The same provider, controls, and decision log drive three formal
 systems:
 **Algebra × Jev**, exact single-variable linear algebra over the rationals,
 **Lambda × Jev**, beta reduction of untyped lambda terms, and
-and **MIU × Jev**, Hofstadter's MU puzzle - the latter mostly included for historical inspiration, it is a bit too simple to really benefit. **Guided** mode uses heuristics with
+and **MIU × Jev**, Hofstadter's MU puzzle - the latter mostly included for historical inspiration. **Guided** mode uses heuristics with
 model-assisted ranking; **Model only** (the default) preserves the provider's choice,
 subject to execution limits. Local **Ollama 0.35.0 or later** with Nimble is
 the default; TypeSafe's hosted Jev API is an optional secondary provider. In
