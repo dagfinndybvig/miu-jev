@@ -246,9 +246,11 @@ from TypeSafe to Ollama 0.35.0+ or vice versa.
   MIU × Jev (the historical inspiration). Launching uses the same loadExample
   path as the example selector; the launch buttons and example switching stay
   disabled while a launch or decision is pending, and the app views stay
-  hidden until a launch succeeds. Choose application returns to the landing
+  hidden until a launch succeeds. The header Menu button and Choose application
+  return to the landing
   without discarding the derivation; Continue the current derivation resumes
-  it. Both are disabled during decisions and auto-run.
+  it. All are disabled during decisions and auto-run; the header button stays
+  hidden while the landing is shown.
 - The example selector starts a new derivation while retaining provider/model
   settings and the shared journal. Validate a new equation before replacing
   the active state. Algebra reset uses the loaded initial equation.

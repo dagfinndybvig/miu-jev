@@ -61,6 +61,8 @@ h1 span { color: var(--acid); }
 h1 .example-title { color: var(--text); }
 
 .subtitle { margin: 14px 0 0; color: var(--muted); }
+.header-actions { display: flex; align-items: center; gap: 10px; }
+.home { padding: 9px 13px; font-size: 0.78rem; }
 
 .status {
   display: flex;
@@ -347,6 +349,7 @@ h2 { margin: 5px 0 0; font-size: 1rem; }
   .shell { width: min(100% - 20px, 1180px); padding-top: 24px; }
   header, .stage-top { align-items: stretch; flex-direction: column; }
   .status { align-self: flex-start; }
+  .header-actions { align-self: flex-start; }
   .target-wrap { min-width: 0; }
   .target-wrap input { text-align: left; }
   .workspace { grid-template-columns: 1fr; }

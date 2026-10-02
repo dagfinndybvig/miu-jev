@@ -254,11 +254,13 @@ test("choosing an application again preserves and resumes the derivation", async
   await app.movesResponse();
   assert.equal(app.state.current, "x + 3 = 7");
 
-  app.nodes.get("chooseApp").click();
+  assert.ok(!app.nodes.get("homeButton").classList.contains("hidden"));
+  app.nodes.get("homeButton").click();
   assert.ok(!app.nodes.get("landing").classList.contains("hidden"));
   assert.ok(app.nodes.get("appStage").classList.contains("hidden"));
   assert.equal(app.state.current, "x + 3 = 7");
   assert.ok(!app.nodes.get("landingResume").classList.contains("hidden"));
+  assert.ok(app.nodes.get("homeButton").classList.contains("hidden"));
   assert.equal(app.nodes.get("exampleTitle").textContent, "Formalism");
 
   app.nodes.get("resumeApp").click();

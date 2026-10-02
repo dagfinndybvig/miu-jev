@@ -655,7 +655,8 @@ The browser UI provides:
   simple example, **Lambda × Jev** as the strategy test, and **MIU × Jev** as
   the historical inspiration, with highlights from this README; a launch
   starts the selected example, and the Example menu
-  switches between them at any time. The **Choose application** control
+  switches between them at any time. The header **Menu** button and the
+  **Choose application** control
   returns to the landing without discarding the active derivation, and
   **Continue the current derivation** resumes it; choosing a card starts that
   example fresh;
