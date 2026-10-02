@@ -23,6 +23,7 @@ const elements = {
   lengthCount: $("lengthCount"),
   moveCount: $("moveCount"),
   iModulo: $("iModulo"),
+  invariantNotice: $("invariantNotice"),
   jevStep: $("jevStep"),
   autoRun: $("autoRun"),
   undo: $("undo"),
@@ -79,6 +80,20 @@ function setRunNotice(message = "") {
   elements.runNotice.classList.toggle("hidden", !message);
 }
 
+function updateInvariantNotice() {
+  const goal = elements.goal.value.trim().toUpperCase();
+  if (!validMiu(goal)) {
+    elements.invariantNotice.textContent =
+      "Invariant watch: enter a non-empty target containing only M, I, and U.";
+    return;
+  }
+  const iCount = [...goal].filter((character) => character === "I").length;
+  elements.invariantNotice.textContent =
+    iCount % 3 === 0
+      ? `Invariant watch: ${goal} has ${iCount} I symbol${iCount === 1 ? "" : "s"}, so it is unreachable from MI.`
+      : `Invariant watch: ${goal} is not ruled out by the modulo-3 test; a derivation is still not guaranteed.`;
+}
+
 function setBusy(busy) {
   state.busy = busy;
   elements.thinking.classList.toggle("hidden", !busy);
@@ -99,6 +114,7 @@ function setBusy(busy) {
 }
 
 function render() {
+  updateInvariantNotice();
   elements.current.textContent = state.current;
   elements.stepCount.textContent = state.history.length - 1;
   elements.lengthCount.textContent = state.current.length;
@@ -329,6 +345,7 @@ elements.reset.addEventListener("click", async () => {
 });
 elements.goal.addEventListener("input", () => {
   elements.goal.value = elements.goal.value.toUpperCase().replace(/[^MIU]/g, "");
+  updateInvariantNotice();
 });
 elements.provider.addEventListener("change", () => {
   const provider = state.providers[elements.provider.value];
