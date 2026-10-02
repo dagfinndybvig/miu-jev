@@ -93,6 +93,9 @@ function setBusy(busy) {
   elements.maxLength.disabled = busy || state.auto;
   elements.stagnationLimit.disabled = busy || state.auto;
   elements.exploreImpossible.disabled = busy || state.auto;
+  for (const button of elements.moves.querySelectorAll("button.move")) {
+    button.disabled = busy || state.auto;
+  }
 }
 
 function render() {
@@ -125,7 +128,10 @@ function render() {
         <span class="probability">${
           probability === undefined ? "" : `${Math.round(probability * 100)}%`
         }</span>`;
-      button.addEventListener("click", () => applyMove(move));
+      button.disabled = state.busy || state.auto;
+      button.addEventListener("click", () => {
+        if (!state.busy && !state.auto) applyMove(move);
+      });
       elements.moves.append(button);
     }
   }
@@ -166,6 +172,7 @@ async function applyMove(move, source = "Manual choice") {
 
 async function jevStep(autoMode = false) {
   if (state.busy || !state.moves.length) return false;
+  const requestedCurrent = state.current;
   const goal = elements.goal.value.trim().toUpperCase();
   if (!validMiu(goal)) {
     setError("Target must contain only M, I, and U.");
@@ -175,7 +182,7 @@ async function jevStep(autoMode = false) {
   setBusy(true);
   try {
     const payload = await api("/api/choose", {
-      current: state.current,
+      current: requestedCurrent,
       goal,
       provider: elements.provider.value,
       model: elements.model.value.trim(),
@@ -186,6 +193,11 @@ async function jevStep(autoMode = false) {
         Math.min(SERVER_MAX_LENGTH, Number(elements.maxLength.value) || 64),
       ),
     });
+    if (state.current !== requestedCurrent) {
+      setRunNotice("Decision discarded because the current string changed.");
+      state.auto = false;
+      return false;
+    }
     state.moves = payload.moves;
     state.selectedId = payload.move.id;
     state.probabilities = Object.assign(
