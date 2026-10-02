@@ -667,7 +667,8 @@ The browser UI provides:
   **Choose application** control
   returns to the landing without discarding the active derivation, and
   **Continue the current derivation** resumes it; choosing a card starts that
-  example fresh;
+  example fresh. A **Settings** button sits beside the Menu button and opens
+  the settings panel;
 - an **Example** menu for MIU, linear equations, and lambda terms;
 - editable starting equations and lambda terms, with **Load equation**;
 - **Request one decision** to evaluate the current menu using the selected policy;

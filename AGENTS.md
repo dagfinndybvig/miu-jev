@@ -251,7 +251,8 @@ from TypeSafe to Ollama 0.35.0+ or vice versa.
   return to the landing
   without discarding the derivation; Continue the current derivation resumes
   it. All are disabled during decisions and auto-run; the header button stays
-  hidden while the landing is shown.
+  hidden while the landing is shown. A header Settings button opens the
+  settings panel.
 - The example selector starts a new derivation while retaining provider/model
   settings and the shared journal. Validate a new equation before replacing
   the active state. Algebra reset uses the loaded initial equation.

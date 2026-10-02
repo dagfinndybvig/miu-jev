@@ -81,7 +81,7 @@ function element() {
   const listeners = new Map();
   return {
     value: "", textContent: "", children: [], options: [], disabled: false,
-    checked: true, listeners,
+    checked: true, open: false, scrollIntoView() {}, listeners,
     classList: {
       add(name) { classes.add(name); },
       remove(name) { classes.delete(name); },
@@ -244,6 +244,16 @@ test("landing page launches lambda and reaches a normal form", async () => {
   assert.equal(app.state.current, "λf.λx.(λf.λx.f x) f ((λf.λx.f (f x)) f x)");
   assert.equal(app.nodes.get("iModulo").textContent, 2);
   assert.match(app.nodes.get("invariantNotice").textContent, /beta contraction/);
+});
+
+test("the header settings button opens the settings panel", async () => {
+  const app = await createApp();
+  app.nodes.get("launchAlgebra").click();
+  await app.movesResponse();
+  assert.equal(app.nodes.get("appSettings").open, false);
+  assert.ok(!app.nodes.get("settingsButton").classList.contains("hidden"));
+  app.nodes.get("settingsButton").click();
+  assert.equal(app.nodes.get("appSettings").open, true);
 });
 
 test("choosing an application again preserves and resumes the derivation", async () => {

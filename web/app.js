@@ -71,6 +71,7 @@ const elements = {
   landing: $("landing"),
   chooseApp: $("chooseApp"),
   homeButton: $("homeButton"),
+  settingsButton: $("settingsButton"),
   landingResume: $("landingResume"),
   resumeApp: $("resumeApp"),
   launchAlgebra: $("launchAlgebra"),
@@ -364,6 +365,7 @@ function setBusy(busy) {
   elements.launchMiu.disabled = busy || state.auto;
   elements.chooseApp.disabled = busy || state.auto;
   elements.homeButton.disabled = busy || state.auto;
+  elements.settingsButton.disabled = busy || state.auto;
   elements.autoRun.disabled = !state.auto && (busy || unavailable || solvedState || state.moves.length === 0);
   elements.undo.disabled = busy || state.auto || state.history.length <= 1;
   elements.reset.disabled = busy;
@@ -390,6 +392,7 @@ function render() {
   for (const view of APP_VIEWS) view.classList.toggle("hidden", state.onLanding);
   elements.landingResume.classList.toggle("hidden", !(state.launched && state.onLanding));
   elements.homeButton.classList.toggle("hidden", !state.launched || state.onLanding);
+  elements.settingsButton.classList.toggle("hidden", !state.launched || state.onLanding);
   elements.example.value = state.system;
   elements.exampleTitle.textContent = state.onLanding ? "Formalism" : EXAMPLES[state.system].title;
   elements.currentLabel.textContent = state.system === "algebra" ? "CURRENT EQUATION"
@@ -818,8 +821,15 @@ async function launchApp(system) {
 elements.launchAlgebra.addEventListener("click", () => launchApp("algebra"));
 elements.launchMiu.addEventListener("click", () => launchApp("miu"));
 elements.launchLambda.addEventListener("click", () => launchApp("lambda"));
+function openSettings() {
+  if (state.busy || state.auto) return;
+  elements.appSettings.open = true;
+  elements.appSettings.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
 elements.chooseApp.addEventListener("click", showLanding);
 elements.homeButton.addEventListener("click", showLanding);
+elements.settingsButton.addEventListener("click", openSettings);
 elements.resumeApp.addEventListener("click", resumeCurrentApp);
 elements.jevStep.addEventListener("click", () => jevStep());
 elements.autoRun.addEventListener("click", autoRun);
