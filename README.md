@@ -216,12 +216,11 @@ contemporary decision model inside the oldest formal model of computation.
 
 ## MIU × Jev
 
-MIU can stand as it is, and the sections below retain its full treatment. An
+MIU was the inspiration for this project. An
 honest admission comes with it: MIU is a bit too simple to benefit much from
 this approach. The engine already enumerates every legal rewrite, and the
 modulo-three invariant settles the interesting question without any search,
-so the strategic work left for a decision model is modest. MIU is retained as
-inspiration because of its place in AI lore: it is where this project began,
+so the strategic work left for a decision model is modest. MIU is retained here because of its place in AI lore: it is where this project began,
 and its origin in Hofstadter's *Gödel, Escher, Bach* makes it a compact,
 familiar stage for constrained machine choice.
 
