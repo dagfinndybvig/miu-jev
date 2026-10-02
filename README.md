@@ -1,4 +1,4 @@
-<img width="503" height="609" alt="geb" src="https://github.com/user-attachments/assets/139955d3-5003-4fe6-9b2d-950d2e4cd045" />
+<img width="658" height="1000" alt="geb2" src="https://github.com/user-attachments/assets/5a434868-854f-44a4-b2e5-bc93a3014b0a" />
 
 # MIU × Jev
 
