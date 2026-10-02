@@ -129,6 +129,12 @@ Important details:
 - Use the bounded syntax-tree parser in `lambda_calc.py`; never `eval`,
   floating point, or a provider-generated term. Syntax is variables a-z,
   `λ` or `\`, `.`, and parentheses; application is juxtaposition.
+- A move's result is the contraction spliced back into the whole term at its
+  marked position. Never return the bare contraction, which silently drops
+  the surrounding context.
+- The default example is Church addition, 1 + 2:
+  `(\m.\n.\f.\x. m f (n f x)) (\f.\x. f x) (\f.\x. f (f x))`, which guided
+  mode reduces to `λf.λx.f (f (f x))` in six steps.
 - Every offered move is a single capture-avoiding beta contraction at a
   server-marked position. The server performs substitution; the provider only
   names a redex.

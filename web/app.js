@@ -25,7 +25,7 @@ const JOURNAL_KEY = "miu-decision-journal-v1";
 const EXAMPLES = {
   miu: { title: "MIU", initial: "MI", goal: "MU", limit: SERVER_MAX_LENGTH },
   algebra: { title: "Algebra", initial: "2 * (x + 3) = 14", goal: "Isolate x", limit: 512 },
-  lambda: { title: "Lambda", initial: "(\\x. x x) (\\y. y)", goal: "Normal form", limit: 512 },
+  lambda: { title: "Lambda", initial: "(\\m.\\n.\\f.\\x. m f (n f x)) (\\f.\\x. f x) (\\f.\\x. f (f x))", goal: "Normal form", limit: 512 },
 };
 
 const $ = (id) => document.getElementById(id);

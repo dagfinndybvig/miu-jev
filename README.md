@@ -713,17 +713,19 @@ unchanged.
 ### Lambda example
 
 Select **Lambda · beta-reduce a term**. The system and its guidance are
-described in [Lambda × Jev](#lambda--jev). The default example is:
+described in [Lambda × Jev](#lambda--jev). The default example is Church
+addition, 1 + 2, which guided mode reduces to the numeral three in six steps:
 
 ```text
-(λx.x x) (λy.y)
-(λy.y) (λy.y)      beta at the root
-λy.y               beta at the root: normal form
+(λm.λn.λf.λx.m f (n f x)) (λf.λx.f x) (λf.λx.f (f x))
+(λn.λf.λx.(λf.λx.f x) f (n f x)) (λf.λx.f (f x))    beta at f
+λf.λx.(λf.λx.f x) f ((λf.λx.f (f x)) f x)          beta at root
+λf.λx.f (f (f x))                                  normal form: three
 ```
 
 Enter any term with **Load equation**. Try the normal-order classic
-`(λx.λy.y) ((λx. x x) (λx. x x))`, Church addition with
-`(λm.λn.λf. m (n f)) (λf.λx. f x) (λf.λx. f (f x))`, or Ω itself,
+`(λx.λy.y) ((λx. x x) (λx. x x))`, successor applied to two with
+`(λn.λf.λx. f (n f x)) (λf.λx. f (f x))`, or Ω itself,
 `(λx. x x) (λx. x x)`, which reduces to itself forever and is stopped only
 by budgets. Manual moves work without either provider.
 

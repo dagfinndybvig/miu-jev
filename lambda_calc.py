@@ -8,7 +8,7 @@ from typing import Any, Callable, Iterator, Literal
 import re
 
 
-DEFAULT_TERM = "(\\x. x x) (\\y. y)"
+DEFAULT_TERM = "(\\m.\\n.\\f.\\x. m f (n f x)) (\\f.\\x. f x) (\\f.\\x. f (f x))"
 GOAL = "Normal form"
 MAX_CHARS = 512
 MAX_NODES = 256
@@ -249,7 +249,7 @@ def describe(value: str) -> dict[str, Any]:
         abstraction, argument = redex.body, redex.arg
         duplication = (occurrences(abstraction.name, abstraction.body) - 1) * size(argument)
         try:
-            result = contract(redex)
+            result = replace(term, position, contract(redex))
             if size(result) > MAX_NODES:
                 raise LambdaLimitError("Result exceeds the term node bound")
             if depth(result) > MAX_DEPTH:

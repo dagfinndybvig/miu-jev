@@ -113,6 +113,13 @@ class LambdaRewriteTests(unittest.TestCase):
         self.assertEqual(len(state["moves"]), 1)
         self.assertEqual(state["moves"][0]["position"], "root")
 
+    def test_inner_contractions_preserve_their_context(self):
+        state = lambda_calc.describe("(λx. x) ((λy. y) z)")
+        self.assertEqual(
+            {(m["position"], m["result"]) for m in state["moves"]},
+            {("root", "(λy.y) z"), ("a", "(λx.x) z")},
+        )
+
     def test_guided_default_reaches_the_normal_form_of_the_default_term(self):
         state = lambda_calc.describe(lambda_calc.DEFAULT_TERM)
         history = [state["current"]]
@@ -127,7 +134,8 @@ class LambdaRewriteTests(unittest.TestCase):
             state = lambda_calc.describe(move["result"])
             steps += 1
             self.assertLess(steps, 10)
-        self.assertEqual(state["current"], "λy.y")
+        self.assertEqual(state["current"], "λf.λx.f (f (f x))")
+        self.assertLessEqual(steps, 8)
 
     def test_guided_prefers_solving_and_avoids_duplication(self):
         # Outer contraction immediately produces a normal form; inner work on Ω diverges.
@@ -146,7 +154,7 @@ class LambdaRewriteTests(unittest.TestCase):
             state["moves"][0], {m["id"]: 0.5 for m in state["moves"]}, 64,
         )
         self.assertEqual(move["position"], "a")
-        self.assertEqual(move["result"], "z z")
+        self.assertEqual(move["result"], "(λx.x x) (z z)")
 
     def test_model_policy_preserves_raw_choice_and_budget_filters_apply(self):
         state = lambda_calc.describe("(λx. x) ((λy. y) z)")
@@ -155,12 +163,15 @@ class LambdaRewriteTests(unittest.TestCase):
             "model", state["current"], lambda_calc.GOAL, [], state["moves"], raw, {}, 64,
         )
         self.assertEqual(picked["id"], raw["id"])
+        state = lambda_calc.describe("(λx. x x) ((λy. y y) z)")
         explanation = {}
         picked = lambda_calc.select_move(
             "guided", state["current"], lambda_calc.GOAL, [], state["moves"],
-            state["moves"][0], {m["id"]: 0.5 for m in state["moves"]}, 1, explanation,
+            state["moves"][0], {m["id"]: 0.5 for m in state["moves"]}, 20, explanation,
         )
-        self.assertEqual(picked["result"], "z")
+        self.assertEqual(picked["position"], "a")
+        self.assertEqual(picked["result"], "(λx.x x) (z z)")
+        self.assertLessEqual(len(picked["result"]), 20)
         self.assertEqual(
             explanation["filters"][0]["reason"], "Prefer moves within the length budget.")
 

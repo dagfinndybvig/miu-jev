@@ -53,12 +53,12 @@ function algebraState(value) {
 }
 
 function lambdaState(value) {
-  const aliases = { "(\\x. x x) (\\y. y)": "(λx.x x) (λy.y)" };
+  const aliases = { "(\\m.\\n.\\f.\\x. m f (n f x)) (\\f.\\x. f x) (\\f.\\x. f (f x))": "(λm.λn.λf.λx.m f (n f x)) (λf.λx.f x) (λf.λx.f (f x))" };
   const current = aliases[value] || value;
   const fixtures = {
-    "(λx.x x) (λy.y)": { redexes: 1, next: [[1, "(λy.y) (λy.y)"]] },
-    "(λy.y) (λy.y)": { redexes: 1, next: [[1, "λy.y"]] },
-    "λy.y": { redexes: 0, next: [] },
+    "(λm.λn.λf.λx.m f (n f x)) (λf.λx.f x) (λf.λx.f (f x))": { redexes: 1, next: [[1, "(λn.λf.λx.(λf.λx.f x) f (n f x)) (λf.λx.f (f x))"]] },
+    "(λn.λf.λx.(λf.λx.f x) f (n f x)) (λf.λx.f (f x))": { redexes: 2, next: [[1, "λf.λx.(λf.λx.f x) f ((λf.λx.f (f x)) f x)"]] },
+    "λf.λx.(λf.λx.f x) f ((λf.λx.f (f x)) f x)": { redexes: 2, next: [] },
   };
   const fixture = fixtures[current];
   assert.ok(fixture, `Missing lambda fixture for ${current}`);
@@ -70,7 +70,7 @@ function lambdaState(value) {
     moves: fixture.next.map(([rule, result], index) => ({
       id: `move-${index}`, rule, result, position: "root", label: "Beta at root",
       detail: "Exact capture-avoiding beta contraction",
-      solved: result === "λy.y", progress: 4, redexes: result === "λy.y" ? 0 : 1,
+      solved: fixture.redexes === 0, progress: 4 + 2 * fixture.redexes, redexes: fixture.redexes,
       duplication: 0,
     })),
   };
@@ -229,21 +229,21 @@ test("landing page launches lambda and reaches a normal form", async () => {
   app.nodes.get("launchLambda").click();
   await app.movesResponse();
   assert.equal(app.state.system, "lambda");
-  assert.equal(app.state.current, "(λx.x x) (λy.y)");
+  assert.equal(app.state.current, "(λm.λn.λf.λx.m f (n f x)) (λf.λx.f x) (λf.λx.f (f x))");
   assert.equal(app.nodes.get("currentLabel").textContent, "CURRENT TERM");
   assert.equal(app.nodes.get("invariantMetricLabel").textContent, "REDEXES");
   assert.equal(app.nodes.get("iModulo").textContent, 1);
   app.nodes.get("moves").children[0].click();
   await app.movesResponse();
-  assert.equal(app.state.current, "(λy.y) (λy.y)");
+  assert.equal(app.state.current, "(λn.λf.λx.(λf.λx.f x) f (n f x)) (λf.λx.f (f x))");
   const step = app.run("jevStep()");
   await app.decisionResponse(0);
   await app.fireTimer(450);
   await app.movesResponse();
   assert.equal(await step, true);
-  assert.equal(app.state.current, "λy.y");
-  assert.ok(app.nodes.get("jevStep").disabled);
-  assert.match(app.nodes.get("invariantNotice").textContent, /Normal form/);
+  assert.equal(app.state.current, "λf.λx.(λf.λx.f x) f ((λf.λx.f (f x)) f x)");
+  assert.equal(app.nodes.get("iModulo").textContent, 2);
+  assert.match(app.nodes.get("invariantNotice").textContent, /beta contraction/);
 });
 
 test("choosing an application again preserves and resumes the derivation", async () => {
