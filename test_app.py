@@ -7,6 +7,8 @@ import unittest
 from http.server import ThreadingHTTPServer
 from unittest.mock import patch
 
+import algebra
+
 from app import (
     MAX_MIU_LENGTH,
     DecisionError,
@@ -130,7 +132,7 @@ class SelectionTests(unittest.TestCase):
             for index in range(30)
         ]
         decide.side_effect = (
-            lambda provider, model, policy, current, goal, history, candidates, max_length, trace=None: (
+            lambda provider, model, policy, current, goal, history, candidates, max_length, trace=None, system="miu": (
                 candidates[-1],
                 {
                     candidate["id"]: 1 / len(candidates)
@@ -387,6 +389,86 @@ class HttpApiTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(payload["move"]["result"], "MII")
         self.assertEqual(payload["moves"], legal_moves("MI"))
+
+    def test_algebra_moves_normalize_and_report_goal_state(self):
+        status, payload = self.request("POST", "/api/moves", {
+            "system": "algebra", "current": "2(x+3)=14",
+        })
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["current"], algebra.DEFAULT_EQUATION)
+        self.assertFalse(payload["solved"])
+        self.assertIn("x + 3 = 7", [move["result"] for move in payload["moves"]])
+        for equation, kind in (("x=4", "unique"), ("0=0", "all"), ("0=1", "none")):
+            status, payload = self.request("POST", "/api/moves", {
+                "system": "algebra", "current": equation,
+            })
+            self.assertEqual(status, 200)
+            self.assertTrue(payload["solved"])
+            self.assertEqual(payload["solution_kind"], kind)
+
+    def test_algebra_choose_recomputes_equivalent_moves(self):
+        response = io.BytesIO(json.dumps({"answers": {"next_move": {
+            "choice": "A", "probabilities": {"A": 1},
+        }}}).encode())
+        with (
+            patch("app.require_compatible_ollama"),
+            patch("app.urllib.request.urlopen", return_value=response),
+        ):
+            status, payload = self.request("POST", "/api/choose", {
+                "system": "algebra", "current": "2(x+3)=14",
+                "moves": [{"id": "move-0", "result": "x = 999"}],
+            })
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["system"], "algebra")
+        self.assertEqual(payload["goal"], algebra.GOAL)
+        self.assertEqual(payload["move"]["result"], "x + 3 = 7")
+        self.assertFalse(payload["analysis"]["solved"])
+        self.assertNotIn("x = 999", [move["result"] for move in payload["moves"]])
+
+    @patch("app.decision_request")
+    def test_invalid_systems_and_algebra_inputs_are_bad_requests(self, decide):
+        for body in (
+            {"system": [], "current": "MI"},
+            {"system": "unknown", "current": "MI"},
+            {"system": "algebra", "current": "x*x=4"},
+            {"system": "algebra", "current": "x/x=1"},
+            {"system": "algebra", "current": "x/0=1"},
+            {"system": "algebra", "current": "2*x=4", "goal": "x = 2"},
+            {"system": "algebra", "current": "2*x=4", "max_length": 513},
+        ):
+            with self.subTest(body=body):
+                status, payload = self.request("POST", "/api/choose", body)
+                self.assertEqual(status, 400)
+                self.assertIn("error", payload)
+        decide.assert_not_called()
+
+
+    @patch("app.decision_request")
+    def test_choose_rejects_history_outside_the_system_grammar(self, decide):
+        for body in (
+            {"current": "MI", "history": ["MI", "M1I"]},
+            {"current": "MI", "history": [""]},
+            {"system": "algebra", "current": "2*x=4", "history": ["2*x=4", "x*x=4"]},
+            {"current": "MI", "history": ["MI"] * 1025},
+        ):
+            with self.subTest(body=body):
+                status, payload = self.request("POST", "/api/choose", body)
+                self.assertEqual(status, 400)
+                self.assertIn("error", payload)
+        decide.assert_not_called()
+
+    def test_static_files_are_served_with_query_strings(self):
+        for path in ("/styles.css?cache=2", "/?refresh=1"):
+            with self.subTest(path=path):
+                connection = http.client.HTTPConnection(*self.server.server_address, timeout=5)
+                try:
+                    connection.request("GET", path)
+                    response = connection.getresponse()
+                    status = response.status
+                    response.read()
+                finally:
+                    connection.close()
+                self.assertEqual(status, 200)
 
 
 class DecisionTraceTests(unittest.TestCase):

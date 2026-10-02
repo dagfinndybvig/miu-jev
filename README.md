@@ -3,13 +3,16 @@
 # MIU × Jev
 
 **MIU × Jev** is an experiment in constrained machine choice. A formal engine
-generates every move permitted by the MIU system, and a decision model evaluates
-that menu. **Guided** mode uses heuristics with model-assisted ranking;
+generates a valid rewrite menu, and a decision model evaluates it. An example
+menu switches between **MIU (the MU puzzle)** and **single-variable algebra**,
+using the same provider, controls, and decision log. MIU enumerates every legal
+rewrite; algebra offers a finite, declared vocabulary of equivalent
+transformations. **Guided** mode uses heuristics with model-assisted ranking;
 **Model only** preserves the provider's choice, subject to execution limits.
 Local **Ollama 0.35.0 or later** with Nimble is the
 default; TypeSafe's hosted Jev API is an optional secondary provider. In either
 mode, the selected policy determines *which* legal path to follow, but it can never
-invent a rule, alter a string directly, or make an illegal move.
+invent a rule, alter a state directly, or make an illegal move.
 
 The result is a small, inspectable example of an AI operating inside hard
 symbolic boundaries:
@@ -485,18 +488,20 @@ whether the model's strategy is useful.
 
 The browser UI provides:
 
+- an **Example** menu for the MU puzzle and linear equations;
+- editable starting equations in algebra, with **Load equation**;
 - **Request one decision** to evaluate the current menu using the selected policy;
 - **Auto-run** to continue choosing until stopped, stuck, or at the target;
-- configurable auto-run step and string-length budgets;
-- invariant preflight before automatic search;
-- stagnation detection based on edit distance to the target;
+- configurable auto-run step and state-length budgets;
+- MIU invariant preflight before automatic search;
+- stagnation detection using MIU target distance or algebra structural cost;
 - automatic stopping before cycles or over-limit growth;
 - locked manual move controls while a model decision or auto-run is active;
 - a header indicator that tracks the selected provider, model, and reported
   availability, including local-provider errors;
 - a provider switch between local Ollama 0.35.0+/Nimble and hosted TypeSafe/Jev;
-- a **guided** reduction-first policy and a **model only** comparison mode;
-- the complete menu of legal rewrites at every step;
+- domain-specific **guided** policies and a **model only** comparison mode;
+- the generated menu of legal rewrites at every step;
 - manual selection of any legal move;
 - decision probabilities when available;
 - expandable decision records alongside history, including raw choices and
@@ -506,13 +511,86 @@ The browser UI provides:
 - a locally saved event log and JSON export, including rejected decisions,
   errors, manual moves, undo/reset, and run stop reasons;
 - undo, reset, and a complete derivation history;
-- live string length, legal-move count, and `I` count modulo three; and
-- editable target, model, and auto-run speed settings.
+- live state length, legal-move count, and a domain-specific progress metric; and
+- editable MIU target, model, and auto-run speed settings.
+
+Changing examples starts a new derivation but keeps provider/model settings
+and the shared decision log. Algebra reset returns to the last loaded equation;
+MIU reset returns to `MI`. Switching and loading are disabled during a decision
+or auto-run. Invalid equations leave the active derivation unchanged.
 
 The choice API in Ollama 0.35.0+ allows at most 26 options, while TypeSafe
 accepts up to 255. If a state exceeds the selected provider's limit, the
 server uses successive groups and a final round so that every legal move
 remains eligible.
+
+### Algebra example
+
+Select **Algebra · solve a linear equation**. The default guided example is:
+
+```text
+2 * (x + 3) = 14
+x + 3 = 7          divide both sides by 2
+x = 4              subtract 3 from both sides
+```
+
+Distribution is also offered as a valid alternative, so the model can choose
+between different derivations. Use the same local Nimble or hosted Jev
+settings as for MIU; no second model setup is needed. Manual moves work
+without either provider.
+
+Try `3x + 2 = x + 10`, `x/2 + 1 = 3`, `-2(x - 3) = 8`, or
+`(1/2)x + 1/3 = 5/6`. The engine uses exact rational arithmetic, not floating
+point or `eval`. Numeric-only arithmetic is normalized on load and during
+rewrites; the log retains the entered and normalized starting equations.
+Variable rearrangements remain explicit steps.
+
+The supported language has one variable, `x`, integers, fractions, ASCII
+`+ - * /`, parentheses, and implicit multiplication such as `2x` or `2(x+3)`.
+Multiplication and division have equal precedence and associate left to right;
+use parentheses to group a denominator. Decimals, powers, functions, other
+variables, variable denominators, and products of two variable-containing
+expressions are rejected.
+
+| Rule | Offered transformation |
+|---|---|
+| 1 | Simplify arithmetic and identities within a subtree. |
+| 2 | Distribute a numeric factor over a sum or difference. |
+| 3 | Expand and collect one side into `a*x + b`. |
+| 4 | Subtract a visible top-level term from both sides. |
+| 5 | Divide both sides by a visible nonzero numeric coefficient. |
+| 6 | Multiply both sides by the LCM of numeric denominators, then collect to clear fractions. |
+| 7 | Swap the two sides. |
+
+This is **not every possible algebraic transformation**. Every offered move is
+checked against the original exact solution set and its displayed expression
+is parsed back to verify the syntax tree. Move positions identify syntax-tree
+locations, rather than MIU character offsets.
+
+The goal is fixed: isolate `x` on the left with a rational number on the right,
+or reduce an identity/contradiction to a numeric equality. For example,
+`x - x = 0` can become `0 = 0` (all rational values), and `x - x = 1` can become
+`0 = 1` (no solution). These are successful classifications, not failed searches.
+The server determines completion; MIU's modulo-three test does not apply.
+
+Algebra guidance prefers in-budget, solved, and unvisited results when available,
+then scores `-10 * structural_cost + 5 * group_probability`. Structural cost is
+syntax-node count, plus six per right-side `x`, four for a nonzero left constant,
+and three for a left `x` coefficient other than one; solved states cost zero.
+This strongly heuristic policy may override the model. **Model only** preserves
+the raw provider choice; neither policy is guaranteed to find a short derivation
+before a safety budget stops it.
+
+Representation limits are 512 characters (including normalized output), 128
+syntax nodes, expression depth below 24, and 128-bit numerators/denominators,
+including computed coefficients and solutions. Oversized inputs are rejected.
+Generated transformations exceeding these bounds are omitted and counted in
+the UI; this is a representation restriction, not mathematical invalidity.
+The separate model-move length budget still defaults to 64 characters.
+
+The deterministic engine already knows how to classify linear equations.
+The experiment is about choosing inspectable intermediate steps, not a claim
+that AI is needed to solve them.
 
 ## Architecture
 
@@ -520,11 +598,13 @@ The project intentionally has no package dependencies or frontend build step.
 
 ```text
 app.py          HTTP server, MIU engine, validation, provider clients
+algebra.py      exact linear-equation parser, rewrites, and guidance
 web/
   index.html    application structure
   styles.css    responsive interface
   app.js        client state and interaction
 test_app.py     rule-engine and selection tests
+test_algebra.py algebra equivalence, limits, policies, and provider tests
 test_web.js     browser-state regression tests (Node.js built-ins)
 benchmark.py    controlled comparisons and bounded BFS reference paths
 test_benchmark.py benchmark generation, safety, and measurement tests
@@ -532,7 +612,7 @@ benchmark-results.json measured sample with per-trial evidence
 ```
 
 The Python server is stateless with respect to a run. The browser sends the
-current string and derivation history when requesting a decision. The server
+current state, example identifier, and derivation history when requesting a decision. The server
 recomputes the legal moves rather than trusting a client-supplied menu.
 
 The provider boundary is also server-side:
@@ -541,22 +621,43 @@ The provider boundary is also server-side:
 browser
    │ current state + provider name
    ▼
-Python MIU engine
+Python MIU / algebra engine
    │ enumerates and validates legal moves
    ├──► Ollama 0.35.0+ /v1/systemone ──► local Nimble
    └──► TypeSafe /v1/systemone ► hosted Jev
 ```
 
 Both providers receive the same semantic state and choice descriptions. Their
-different option limits are handled by the server, so the browser and MIU rule
-engine do not need provider-specific logic.
+different option limits are handled by the server, so neither formal engine
+needs provider-specific logic. Algebra prompts describe equations and
+solution-set preservation; MIU prompts retain their own rules and invariant.
 Provider responses must select a supplied move and contain finite probabilities
 between zero and one when probabilities are supplied. Malformed responses are
 reported as upstream errors rather than forwarded as invalid JSON.
 
+### HTTP example selection
+
+`POST /api/moves` and `POST /api/choose` accept `system: "miu"` or
+`system: "algebra"`. Omission defaults to MIU for existing callers. Both
+recompute moves from `current`; a client-supplied menu is never authoritative.
+
+For example, `/api/moves` accepts:
+
+```json
+{"system": "algebra", "current": "2(x + 3) = 14"}
+```
+
+It returns normalized `current`, `moves`, `solved`, `progress`, `solution_kind`,
+`omitted_for_limits`, `rules`, and `limits`. `/api/choose` uses the same
+`provider`, `model`, `policy`, `history`, and `max_length` fields as MIU.
+The algebra `goal` must be `"Isolate x"` or omitted. Its `max_length` range
+is 8–512. Decision responses include `system` and an `analysis` object describing
+the input equation. Each algebra move also reports its result's `solved` and
+`progress` values. `/api/health` remains shared provider metadata.
+
 ### Decision records and local persistence
 
-`POST /api/choose` returns the current state, target, provider/model, policy,
+`POST /api/choose` returns the example identifier, current state, target, provider/model, policy,
 history, length budget, legal menu, selected move, timings, and provider-call
 and override counts. Each tournament round contains separate `groups`, each
 with candidate IDs, raw provider choice, advancing winner, probabilities, and
@@ -580,7 +681,9 @@ marked interrupted and unfinished runs receive a `page_interrupted` stop
 event. Use one active app tab per origin for this local journal. **Export JSON**
 saves a portable snapshot of the active
 derivation and journal; **Clear saved log** removes saved evidence without
-changing the active derivation. Logs contain MIU states and provider/model
+changing the active derivation. The `formal-decision-log.json` export labels each
+example; older records without an identifier are treated as MIU. Logs contain
+MIU states, algebra equations, and provider/model
 names, never provider credentials. On shared browsers, clear the log when done.
 Changing the server port changes the browser origin and its saved log.
 
@@ -589,7 +692,7 @@ explicit warning remains visible. New records remain in memory and can be
 exported; unreadable saved data is not silently overwritten. Export before
 closing the page. The Python server does not persist browser journals.
 
-### Runaway-search protection
+### MIU runaway-search protection
 
 The default `MI → MU` target is formally impossible, so no move-selection
 strategy can make auto-run succeed. Rule 2 can also double a string
@@ -624,7 +727,7 @@ the project. The UI warns that the target cannot be reached, then relies on the
 step, length, cycle, and stagnation budgets to stop safely. Users may disable
 the exploratory override when they want impossible targets rejected outright.
 
-### Guided selection heuristics
+### MIU guided selection heuristics
 
 Prompting alone does not reliably teach a decision model how to control an
 open-ended symbolic search. The default **Guided · heuristics + model ranking** policy
@@ -734,7 +837,7 @@ python app.py --host 127.0.0.1 --port 9000
 
 ```powershell
 python -m unittest -v
-python -m py_compile app.py test_app.py benchmark.py test_benchmark.py
+python -m py_compile app.py algebra.py test_app.py test_algebra.py benchmark.py test_benchmark.py
 node --check web\app.js
 node --test test_web.js
 ```
@@ -745,10 +848,16 @@ requirement and 26-choice tournament behavior, and TypeSafe's larger choice
 window. They also cover HTTP validation, malformed provider responses, explicit
 hosted-provider selection, stale menus, auto-run cancellation, and provider
 status, decision journals, tournament evidence, export, and benchmark metrics.
+Algebra coverage includes exact rational parsing, solution-set preservation,
+representation limits, solved-state recognition, shared tournaments, custom
+equations, example switching, and cross-example response isolation.
 Browser-state tests use Node.js 18 or later with no npm dependencies;
 Node.js is not required to run the app.
 
 ## Controlled strategy comparisons
+
+The benchmark runner is **MIU-specific**; its measurements do not evaluate
+algebra strategies.
 
 Run the random and heuristic-only baselines without any model calls:
 
@@ -800,7 +909,11 @@ before treating one as a complete comparison.
 
 The checked-in [raw report](benchmark-results.json) contains 60 trials: four
 reachable targets at reference depths 3, 4, 5, and 6, plus separate `MU`
-exploration, repeated twice for each of six configurations. Reproduce its setup:
+exploration, repeated twice for each of six configurations. It is a historical
+MIU sample from commit `8dc77a8`, before the algebra example was added, not a
+measurement of the current expanded implementation. Recorded source hashes
+identify that Windows working tree (CRLF line endings), not Git's LF-normalized
+blobs. Reproduce its setup:
 
 ```powershell
 python benchmark.py --providers ollama typesafe --targets 4 --repeats 2 --max-steps 10 --max-length 32 --stagnation-limit 4 --bfs-depth 7 --bfs-states 10000 --seed 20261002 --output comparison-results.json
@@ -840,5 +953,7 @@ interactive search or proof-producing planner. Its choices are local decisions
 informed by the current state, target,
 recent derivation, and move descriptions.
 
-That limitation is deliberate: the project contrasts a model's step-by-step
-judgment with a formal invariant that settles the entire infinite search space.
+For MIU, the project contrasts step-by-step model judgment with an invariant
+that settles the impossible `MU` target. Algebra instead supplies reachable
+equations with different valid derivations. Both are experiments in constrained
+step selection, not evidence that a model improves on deterministic methods.

@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       name="description"
-      content="An exact MIU formal-system engine with local Nimble or hosted Jev choosing each move."
+      content="Explore MIU rewrites and exact linear algebra with local Nimble or hosted Jev choosing valid moves."
     />
-    <title>MIU × Jev</title>
+    <title>MIU &amp; Algebra × Jev</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
@@ -15,10 +15,10 @@
       <header>
         <div>
           <p class="eyebrow">FORMAL PLAYGROUND / CONSTRAINED AI</p>
-          <h1>MIU <span>×</span> Jev</h1>
+          <h1><span class="example-title" id="exampleTitle">MIU</span> <span>×</span> Jev</h1>
           <p class="subtitle">
             The engine enforces the rules. Your policy chooses how model advice is used.
-            Explore reachable targets or watch a bounded impossible search.
+            Try the MU puzzle or solve a linear equation with the same decision model.
           </p>
         </div>
         <div class="status" id="engineStatus">
@@ -29,9 +29,23 @@
 
       <main>
         <section class="stage panel">
+          <div class="example-picker">
+            <label for="example">EXAMPLE</label>
+            <select id="example">
+              <option value="miu">MIU · the MU puzzle</option>
+              <option value="algebra">Algebra · solve a linear equation</option>
+            </select>
+            <p class="journal-help">Changing examples starts a new derivation. Provider settings and the decision log are shared.</p>
+          </div>
+          <div class="equation-editor hidden" id="equationEditor">
+            <label for="equation">STARTING EQUATION</label>
+            <input id="equation" value="2(x + 3) = 14" maxlength="512" spellcheck="false" />
+            <button id="loadEquation">Load equation</button>
+            <p class="journal-help">Use x, integers, fractions, + - * /, and parentheses. Examples: 3x + 2 = x + 10; x/2 + 1 = 3. No powers or variable denominators.</p>
+          </div>
           <div class="stage-top">
             <div>
-              <span class="label">CURRENT STRING</span>
+              <span class="label" id="currentLabel">CURRENT STRING</span>
               <div class="current-string" id="currentString">MI</div>
             </div>
             <div class="target-wrap">
@@ -44,7 +58,7 @@
             <div><span id="stepCount">0</span><small>STEPS</small></div>
             <div><span id="lengthCount">2</span><small>LENGTH</small></div>
             <div><span id="moveCount">—</span><small>LEGAL MOVES</small></div>
-            <div><span id="iModulo">1</span><small>#I MOD 3</small></div>
+            <div><span id="iModulo">1</span><small id="invariantMetricLabel">#I MOD 3</small></div>
           </div>
 
           <div class="notice" id="invariantNotice">
@@ -94,7 +108,7 @@
             </div>
           </div>
           <p class="journal-help">
-            Decisions, manual moves, rejected choices, and stop reasons are saved in this
+            Both examples' decisions, manual moves, rejected choices, and stop reasons are saved in this
             browser, including across undo, reset, and reload. Export for a portable record.
             Group probabilities are conditional on that group, not global confidence.
             Explanations describe deterministic policy rules, not the model's private reasoning.
@@ -137,19 +151,19 @@
               <input id="maxSteps" type="number" min="1" max="500" value="40" />
             </label>
             <label>
-              Maximum string length
+              Maximum state length
               <input id="maxLength" type="number" min="8" max="8192" value="64" />
             </label>
             <label>
               Steps without target progress
               <input id="stagnationLimit" type="number" min="1" max="100" value="10" />
             </label>
-            <label class="check-setting">
+            <label class="check-setting" id="exploreSetting">
               <input id="exploreImpossible" type="checkbox" checked />
               Allow exploratory auto-run for invariant-impossible targets
             </label>
           </div>
-          <div class="rules">
+          <div class="rules" id="rules">
             <span><b>1</b> xI → xIU</span>
             <span><b>2</b> Mx → Mxx</span>
             <span><b>3</b> xIIIy → xUy</span>

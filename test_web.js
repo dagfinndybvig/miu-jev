@@ -26,6 +26,32 @@ function legalMenu(current) {
   }));
 }
 
+function algebraState(value) {
+  const aliases = { "2(x+3)=14": "2 * (x + 3) = 14", "3x=12": "3 * x = 12" };
+  const current = aliases[value] || value;
+  const fixtures = {
+    "2 * (x + 3) = 14": { progress: 13, next: [[2, "2 * x + 6 = 14", 13], [5, "x + 3 = 7", 8]] },
+    "x + 3 = 7": { progress: 8, next: [[4, "x = 4", 0], [7, "7 = x + 3", 14]] },
+    "3 * x = 12": { progress: 7, next: [[5, "x = 4", 0]] },
+    "x = 4": { progress: 0, next: [[7, "4 = x", 8]] },
+    "x - x = 0": { progress: 7, next: [[1, "0 = 0", 0]] },
+    "x - x = 1": { progress: 7, next: [[1, "0 = 1", 0]] },
+    "0 = 0": { progress: 0, kind: "all", next: [] },
+    "0 = 1": { progress: 0, kind: "none", next: [[7, "1 = 0", 0]] },
+  };
+  const fixture = fixtures[current];
+  assert.ok(fixture, `Missing algebra fixture for ${current}`);
+  return {
+    system: "algebra", current, progress: fixture.progress, solved: fixture.progress === 0,
+    solution_kind: fixture.kind || "unique", omitted_for_limits: 0,
+    rules: ["1: Simplify", "2: Distribute", "3: Collect", "4: Subtract", "5: Divide", "6: Clear fractions", "7: Swap"],
+    moves: fixture.next.map(([rule, result, progress], index) => ({
+      id: `move-${index}`, rule, result, progress, solved: progress === 0,
+      position: "both", label: `Rule ${rule}`, detail: "Exact equivalent transformation",
+    })),
+  };
+}
+
 function element() {
   const classes = new Set();
   const listeners = new Map();
@@ -104,7 +130,8 @@ async function createApp(healthProviders = providers, storage = new Map()) {
     async movesResponse() {
       const request = requests.shift();
       assert.equal(request.url, "/api/moves");
-      request.respond({ moves: legalMenu(request.body.current) });
+      request.respond(request.body.system === "algebra" ? algebraState(request.body.current) :
+        { system: "miu", current: request.body.current, moves: legalMenu(request.body.current) });
       await settle();
     },
     async fireTimer(delay) {
@@ -116,8 +143,11 @@ async function createApp(healthProviders = providers, storage = new Map()) {
     async decisionResponse(index) {
       const request = requests.shift();
       assert.equal(request.url, "/api/choose");
-      const moves = legalMenu(request.body.current);
+      const snapshot = request.body.system === "algebra" ? algebraState(request.body.current) :
+        { system: "miu", current: request.body.current, moves: legalMenu(request.body.current) };
+      const { moves, ...analysis } = snapshot;
       request.respond({
+        system: request.body.system || "miu", analysis,
         moves, move: moves[index], provider: request.body.provider,
         policy: request.body.policy, rounds: [{ round: 1, groups: [{
           group: 1, candidates: moves.map((move) => move.id),
@@ -276,7 +306,7 @@ test("decisions are revision-bound before and after their animation", async () =
     await step;
     assert.equal(app.state.current, "MI");
     assert.equal(app.state.history.length, 1);
-    assert.match(app.nodes.get("runNotice").textContent, /current string changed/);
+    assert.match(app.nodes.get("runNotice").textContent, /current state changed/);
   }
 });
 
@@ -326,7 +356,7 @@ test("auto-run preserves invariant preflight, target stopping, and stagnation li
 
 test("auto-run rejects over-budget and repeated successors before committing", async () => {
   for (const scenario of [
-    { history: ["MI", "MII", "MIIII"], choice: 1, length: "8", notice: /grow the string/ },
+    { history: ["MI", "MII", "MIIII"], choice: 1, length: "8", notice: /next state would have/ },
     {
       history: ["MI", "MII", "MIIII", "MIIIIIIII", "MUIIIII", "MUUII"],
       choice: 2, length: "64", notice: /revisiting/,
@@ -542,4 +572,148 @@ test("corrupt saved logs are not silently overwritten; explicit clear leaves der
   assert.equal(app.state.history.length, 2);
   assert.equal(app.state.storageAvailable, true);
   assert.equal(storage.has("miu-decision-journal-v1"), false);
+});
+
+test("the example menu shares provider settings while keeping domain-specific controls", async () => {
+  const app = await createApp();
+  app.nodes.get("provider").value = "typesafe";
+  app.nodes.get("provider").listeners.get("change")();
+  app.nodes.get("model").value = "custom-jev";
+  const loading = app.run("loadExample('algebra')");
+  assert.equal(app.state.system, "miu");
+  assert.equal(app.nodes.get("example").disabled, true);
+  await app.movesResponse();
+  assert.equal(await loading, true);
+  assert.equal(app.state.system, "algebra");
+  assert.equal(app.state.current, "2 * (x + 3) = 14");
+  assert.equal(app.nodes.get("provider").value, "typesafe");
+  assert.equal(app.nodes.get("model").value, "custom-jev");
+  assert.equal(app.nodes.get("goal").value, "Isolate x");
+  assert.equal(app.nodes.get("goal").disabled, true);
+  assert.equal(app.nodes.get("exploreSetting").classList.contains("hidden"), true);
+  assert.equal(app.nodes.get("rules").children.length, 7);
+  assert.equal(app.nodes.get("invariantMetricLabel").textContent, "PROGRESS COST");
+  assert.equal(app.nodes.get("maxLength").max, 512);
+  const back = app.run("loadExample('miu')");
+  await app.movesResponse();
+  await back;
+  assert.equal(app.state.current, "MI");
+  assert.equal(app.nodes.get("goal").value, "MU");
+  assert.equal(app.nodes.get("rules").children.length, 4);
+  assert.equal(app.nodes.get("model").value, "custom-jev");
+  assert.ok(app.state.events.some((event) => event.type === "example_loaded" && event.system === "algebra"));
+});
+
+test("algebra auto-run reaches a server-verified solved state with either provider", async () => {
+  for (const provider of ["ollama", "typesafe"]) {
+    const app = await createApp();
+    const loading = app.run("loadExample('algebra')");
+    await app.movesResponse();
+    await loading;
+    app.nodes.get("provider").value = provider;
+    app.nodes.get("provider").listeners.get("change")();
+    app.nodes.get("exploreImpossible").checked = false;
+    const run = app.run("autoRun()");
+    assert.equal(app.requests[0].body.system, "algebra");
+    assert.equal(app.requests[0].body.goal, "Isolate x");
+    await app.completeDecision(1);
+    await app.fireTimer(750);
+    await app.completeDecision(0);
+    await run;
+    assert.equal(app.state.current, "x = 4");
+    assert.equal(app.state.analysis.solved, true);
+    assert.equal(app.state.auto, false);
+    assert.equal(app.state.history.length, 3);
+    assert.equal(app.nodes.get("jevStep").disabled, true);
+    assert.equal(app.nodes.get("autoRun").disabled, true);
+    assert.match(app.nodes.get("invariantNotice").textContent, /Solved/);
+    assert.ok(app.state.events.some((event) =>
+      event.type === "run_stopped" && event.reason === "target_reached" && event.system === "algebra"));
+    const decisions = app.state.events.filter((event) => event.type === "decision");
+    assert.ok(decisions.every((event) => event.request.system === "algebra" && event.status === "applied"));
+  }
+});
+
+test("custom equations normalize on load, support manual moves and undo, and reset to their own start", async () => {
+  const app = await createApp();
+  const loading = app.run("loadExample('algebra', '3x=12')");
+  await app.movesResponse();
+  await loading;
+  assert.equal(app.state.initial, "3 * x = 12");
+  app.nodes.get("moves").children[0].click();
+  await app.movesResponse();
+  assert.equal(app.state.current, "x = 4");
+  app.nodes.get("undo").click();
+  await app.movesResponse();
+  assert.equal(app.state.current, "3 * x = 12");
+  app.nodes.get("moves").children[0].click();
+  await app.movesResponse();
+  app.nodes.get("reset").click();
+  await app.movesResponse();
+  assert.equal(app.state.current, "3 * x = 12");
+  app.nodes.get("exportLog").click();
+  const exported = JSON.parse(await app.downloads[0].text());
+  assert.equal(exported.system, "algebra");
+  assert.equal(exported.initial, "3 * x = 12");
+  assert.ok(exported.events.some((event) => event.type === "manual_move" && event.system === "algebra"));
+});
+
+test("invalid algebra loads preserve the active derivation and surface errors", async () => {
+  const app = await createApp();
+  const loading = app.run("loadExample('algebra', 'x/x=1')");
+  app.requests.shift().respond({ error: "Variable denominators are not supported" }, false);
+  assert.equal(await loading, false);
+  assert.equal(app.state.system, "miu");
+  assert.equal(app.state.current, "MI");
+  assert.equal(app.state.history.length, 1);
+  assert.equal(app.state.moves.length, 2);
+  assert.match(app.nodes.get("errorBox").textContent, /Variable denominators/);
+  assert.equal(app.nodes.get("example").value, "miu");
+});
+
+test("example changes are locked during decisions and cross-domain stale responses are discarded", async () => {
+  const app = await createApp();
+  const loading = app.run("loadExample('algebra')");
+  await app.movesResponse();
+  await loading;
+  const step = app.run("jevStep()");
+  assert.equal(app.nodes.get("example").disabled, true);
+  assert.equal(await app.run("loadExample('miu')"), false);
+  assert.equal(app.requests.length, 1);
+  app.run("state.system = 'miu'");
+  await app.decisionResponse(1);
+  await step;
+  assert.equal(app.state.history.length, 1);
+  assert.equal(app.state.events.find((event) => event.type === "decision").reason, "state_changed");
+});
+
+test("algebra execution budgets still reject moves before committing", async () => {
+  const app = await createApp();
+  const loading = app.run("loadExample('algebra')");
+  await app.movesResponse();
+  await loading;
+  app.nodes.get("maxLength").value = "8";
+  const run = app.run("autoRun()");
+  await app.decisionResponse(1);
+  await app.fireTimer(100);
+  await run;
+  assert.equal(app.state.current, "2 * (x + 3) = 14");
+  assert.equal(app.state.events.find((event) => event.type === "decision").reason, "length_budget");
+});
+
+test("algebra handles identities and contradictions without applying the MIU invariant", async () => {
+  for (const [equation, message] of [
+    ["x - x = 0", /every rational x/], ["x - x = 1", /no solution/],
+  ]) {
+    const app = await createApp();
+    const loading = app.run(`loadExample('algebra', '${equation}')`);
+    await app.movesResponse();
+    await loading;
+    app.nodes.get("exploreImpossible").checked = false;
+    const run = app.run("autoRun()");
+    await app.completeDecision(0);
+    await run;
+    assert.equal(app.state.analysis.solved, true);
+    assert.match(app.nodes.get("invariantNotice").textContent, message);
+  }
 });

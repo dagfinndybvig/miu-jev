@@ -1,4 +1,7 @@
 const state = {
+  system: "miu",
+  initial: "MI",
+  analysis: null,
   current: "MI",
   history: [{ value: "MI", label: "Axiom" }],
   moves: [],
@@ -17,6 +20,10 @@ const state = {
 };
 const SERVER_MAX_LENGTH = 8192;
 const JOURNAL_KEY = "miu-decision-journal-v1";
+const EXAMPLES = {
+  miu: { title: "MIU", initial: "MI", goal: "MU", limit: SERVER_MAX_LENGTH },
+  algebra: { title: "Algebra", initial: "2 * (x + 3) = 14", goal: "Isolate x", limit: 512 },
+};
 
 const $ = (id) => document.getElementById(id);
 const elements = {
@@ -50,7 +57,28 @@ const elements = {
   exportLog: $("exportLog"),
   clearLog: $("clearLog"),
   journalNotice: $("journalNotice"),
+  example: $("example"),
+  exampleTitle: $("exampleTitle"),
+  currentLabel: $("currentLabel"),
+  metricLabel: $("invariantMetricLabel"),
+  equationEditor: $("equationEditor"),
+  equation: $("equation"),
+  loadEquation: $("loadEquation"),
+  exploreSetting: $("exploreSetting"),
+  rules: $("rules"),
 };
+
+function goalValue() {
+  return state.system === "algebra" ? EXAMPLES.algebra.goal : elements.goal.value.trim().toUpperCase();
+}
+
+function goalReached() {
+  return state.system === "algebra" ? Boolean(state.analysis?.solved) : state.current === goalValue();
+}
+
+function progressDistance() {
+  return state.system === "algebra" ? state.analysis.progress : targetDistance(state.current, goalValue());
+}
 
 function validMiu(value) {
   return /^[MIU]+$/.test(value);
@@ -132,7 +160,9 @@ function loadJournal() {
       }
     }
     for (const run of unfinishedRuns.values()) {
-      recordEvent("run_stopped", { run_id: run.run_id, reason: "page_interrupted" });
+      recordEvent("run_stopped", {
+        system: run.system || "miu", run_id: run.run_id, reason: "page_interrupted",
+      });
     }
   } catch {
     state.storageAvailable = false;
@@ -142,7 +172,7 @@ function loadJournal() {
 
 function recordEvent(type, details = {}) {
   const event = {
-    id: state.nextEventId++, timestamp: new Date().toISOString(), type,
+    id: state.nextEventId++, timestamp: new Date().toISOString(), system: state.system, type,
     ...details,
   };
   state.events.push(event);
@@ -163,7 +193,8 @@ function recordDetails(event) {
   const details = document.createElement("details");
   details.className = "decision-details";
   const summary = document.createElement("summary");
-  summary.textContent = `#${event.id} ${event.type.replaceAll("_", " ")} · ${event.status || event.reason || event.timestamp}`;
+  const systemName = EXAMPLES[event.system || "miu"]?.title || event.system;
+  summary.textContent = `${systemName} #${event.id} ${event.type.replaceAll("_", " ")} · ${event.status || event.reason || event.timestamp}`;
   details.append(summary);
   let loaded = false;
   details.addEventListener("toggle", () => {
@@ -174,6 +205,7 @@ function recordDetails(event) {
     if (evidence) {
       description.decision_summary = {
         current: evidence.current, goal: evidence.goal,
+        system: evidence.system || "miu",
         provider: evidence.provider, model: evidence.model, policy: evidence.policy,
         provider_calls: evidence.provider_calls, override_count: evidence.override_count,
         elapsed_ms: evidence.elapsed_ms,
@@ -238,18 +270,32 @@ function renderJournal() {
 function exportJournal() {
   const payload = {
     schema_version: 1, exported_at: new Date().toISOString(),
+    system: state.system, initial: state.initial,
     current: state.current, history: state.history, events: state.events,
   };
   const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" }));
   const link = document.createElement("a");
   link.href = url;
-  link.download = "miu-decision-log.json";
+  link.download = "formal-decision-log.json";
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function updateInvariantNotice() {
-  const goal = elements.goal.value.trim().toUpperCase();
+  if (state.system === "algebra") {
+    const status = state.analysis?.solved
+      ? state.analysis.solution_kind === "all"
+        ? "Identity: every rational x is a solution."
+        : state.analysis.solution_kind === "none"
+          ? "Contradiction: this equation has no solution."
+          : "Solved: x is isolated."
+      : "Each offered transformation preserves exactly the solution set over the rationals.";
+    const omitted = state.analysis?.omitted_for_limits || 0;
+    elements.invariantNotice.textContent = `${status} This is a finite, bounded rewrite menu, not all of algebra.` +
+      (omitted ? ` ${omitted} transformations exceed the representation limits and are not offered.` : "");
+    return;
+  }
+  const goal = goalValue();
   if (!validMiu(goal)) {
     elements.invariantNotice.textContent =
       "Invariant watch: enter a non-empty target containing only M, I, and U.";
@@ -283,12 +329,16 @@ function setBusy(busy) {
   state.busy = busy;
   elements.thinking.classList.toggle("hidden", !busy);
   const unavailable = !state.providers[elements.provider.value]?.available;
-  elements.jevStep.disabled = busy || state.auto || unavailable || state.moves.length === 0;
-  elements.autoRun.disabled = !state.auto && (busy || unavailable || state.moves.length === 0);
+  const solvedAlgebra = state.system === "algebra" && goalReached();
+  elements.jevStep.disabled = busy || state.auto || unavailable || solvedAlgebra || state.moves.length === 0;
+  elements.autoRun.disabled = !state.auto && (busy || unavailable || solvedAlgebra || state.moves.length === 0);
   elements.undo.disabled = busy || state.auto || state.history.length <= 1;
   elements.reset.disabled = busy;
   elements.clearLog.disabled = busy || state.auto;
-  elements.goal.disabled = busy || state.auto;
+  elements.goal.disabled = busy || state.auto || state.system === "algebra";
+  elements.example.disabled = busy || state.auto;
+  elements.equation.disabled = busy || state.auto;
+  elements.loadEquation.disabled = busy || state.auto;
   elements.model.disabled = busy || state.auto;
   elements.provider.disabled = busy || state.auto;
   elements.policy.disabled = busy || state.auto;
@@ -302,12 +352,28 @@ function setBusy(busy) {
 }
 
 function render() {
+  const algebraMode = state.system === "algebra";
+  elements.example.value = state.system;
+  elements.exampleTitle.textContent = EXAMPLES[state.system].title;
+  elements.currentLabel.textContent = algebraMode ? "CURRENT EQUATION" : "CURRENT STRING";
+  elements.metricLabel.textContent = algebraMode ? "PROGRESS COST" : "#I MOD 3";
+  elements.equationEditor.classList.toggle("hidden", !algebraMode);
+  elements.exploreSetting.classList.toggle("hidden", algebraMode);
+  elements.maxLength.max = EXAMPLES[state.system].limit;
+  elements.rules.replaceChildren();
+  const rules = algebraMode ? state.analysis?.rules || [] :
+    ["1: xI → xIU", "2: Mx → Mxx", "3: xIIIy → xUy", "4: xUUy → xy"];
+  for (const rule of rules) {
+    const item = document.createElement("span");
+    item.textContent = rule;
+    elements.rules.append(item);
+  }
   updateInvariantNotice();
   elements.current.textContent = state.current;
   elements.stepCount.textContent = state.history.length - 1;
   elements.lengthCount.textContent = state.current.length;
   elements.moveCount.textContent = state.moves.length;
-  elements.iModulo.textContent =
+  elements.iModulo.textContent = algebraMode ? state.analysis?.progress ?? "—" :
     [...state.current].filter((char) => char === "I").length % 3;
   elements.autoRun.textContent = state.auto ? "Stop auto-run" : "Auto-run";
   elements.autoRun.classList.toggle("primary", state.auto);
@@ -316,7 +382,7 @@ function render() {
   if (!state.moves.length) {
     const empty = document.createElement("div");
     empty.className = "empty";
-    empty.textContent = "No legal rewrites from this string.";
+    empty.textContent = "No legal rewrites from this state.";
     elements.moves.append(empty);
   } else {
     for (const move of state.moves) {
@@ -356,18 +422,67 @@ function render() {
 
 async function refreshMoves() {
   const revision = state.revision;
+  const system = state.system;
   const request = ++state.movesRequest;
   state.moves = [];
   state.movesRevision = null;
   state.probabilities = {};
   state.selectedId = null;
+  state.analysis = null;
   render();
-  const payload = await api("/api/moves", { current: state.current });
-  if (revision !== state.revision || request !== state.movesRequest) return false;
+  const payload = await api("/api/moves", { system, current: state.current });
+  if (revision !== state.revision || request !== state.movesRequest || system !== state.system) return false;
   state.moves = payload.moves;
+  state.analysis = system === "algebra" ? payload : null;
   state.movesRevision = revision;
   render();
   return true;
+}
+
+async function loadExample(system, equation = EXAMPLES[system]?.initial) {
+  if (state.busy || state.auto) {
+    elements.example.value = state.system;
+    setError("Stop the run and wait for the current operation before changing examples.");
+    return false;
+  }
+  if (!Object.hasOwn(EXAMPLES, system)) {
+    setError("Unknown example.");
+    return false;
+  }
+  setError();
+  setBusy(true);
+  try {
+    const payload = await api("/api/moves", { system, current: equation });
+    const initial = payload.current;
+    stopAutoRun("example_changed");
+    recordEvent("example_loaded", {
+      system, previous_system: state.system, previous_current: state.current,
+      input: equation, initial,
+    });
+    state.system = system;
+    state.initial = initial;
+    state.current = initial;
+    state.history = [{ value: initial, label: system === "miu" ? "Axiom" : "Starting equation" }];
+    state.revision += 1;
+    state.movesRequest += 1;
+    state.moves = payload.moves;
+    state.movesRevision = state.revision;
+    state.analysis = system === "algebra" ? payload : null;
+    state.probabilities = {};
+    state.selectedId = null;
+    elements.goal.value = EXAMPLES[system].goal;
+    elements.equation.value = system === "algebra" ? initial : EXAMPLES.algebra.initial;
+    elements.maxLength.value = Math.max(8, Math.min(EXAMPLES[system].limit, Number(elements.maxLength.value) || 64));
+    setRunNotice();
+    return true;
+  } catch (error) {
+    setError(error.message);
+    recordEvent("example_rejected", { requested_system: system, reason: error.message });
+    return false;
+  } finally {
+    setBusy(false);
+    render();
+  }
 }
 
 function stopAutoRun(reason = "stopped") {
@@ -400,7 +515,7 @@ async function setHistory(history, appliedEvent = null, reason = "") {
 
 async function applyMove(move, source = "Manual choice", decision = null) {
   const event = decision || recordEvent("manual_move", {
-    current: state.current, goal: elements.goal.value.trim().toUpperCase(),
+    current: state.current, goal: goalValue(),
     candidates: state.moves, move,
   });
   if (state.movesRevision !== state.revision || !state.moves.includes(move)) {
@@ -408,9 +523,9 @@ async function applyMove(move, source = "Manual choice", decision = null) {
     finishDecision(event, "rejected", "stale_menu");
     return false;
   }
-  if (move.result.length > SERVER_MAX_LENGTH) {
+  if (move.result.length > EXAMPLES[state.system].limit) {
     setError(
-      `That move would exceed the server limit of ${SERVER_MAX_LENGTH} characters.`,
+      `That move would exceed the server limit of ${EXAMPLES[state.system].limit} characters.`,
     );
     finishDecision(event, "rejected", "server_length_limit");
     return false;
@@ -426,24 +541,26 @@ async function applyMove(move, source = "Manual choice", decision = null) {
 async function jevStep(runId = null) {
   const autoMode = runId !== null;
   if (state.busy || !state.moves.length || (state.auto && !autoMode)) return false;
+  if (state.system === "algebra" && goalReached()) return false;
   if (!state.providers[elements.provider.value]?.available) {
     updateEngineStatus();
     return false;
   }
   const requestedCurrent = state.current;
   const requestedRevision = state.revision;
-  const goal = elements.goal.value.trim().toUpperCase();
-  if (!validMiu(goal)) {
+  const requestedSystem = state.system;
+  const goal = goalValue();
+  if (state.system === "miu" && !validMiu(goal)) {
     setError("Target must contain only M, I, and U.");
     return false;
   }
   setError();
   setBusy(true);
   const request = {
-    current: requestedCurrent, goal, provider: elements.provider.value,
+    system: requestedSystem, current: requestedCurrent, goal, provider: elements.provider.value,
     model: elements.model.value.trim(), policy: elements.policy.value,
     history: state.history.map((entry) => entry.value),
-    max_length: Math.max(8, Math.min(SERVER_MAX_LENGTH, Number(elements.maxLength.value) || 64)),
+    max_length: Math.max(8, Math.min(EXAMPLES[state.system].limit, Number(elements.maxLength.value) || 64)),
   };
   const decision = recordEvent("decision", {
     status: "pending", run_id: runId, request, candidates: state.moves,
@@ -457,13 +574,14 @@ async function jevStep(runId = null) {
       finishDecision(decision, "rejected", "run_cancelled");
       return false;
     }
-    if (state.revision !== requestedRevision || state.current !== requestedCurrent) {
-      setRunNotice("Decision discarded because the current string changed.");
+    if (state.system !== requestedSystem || state.revision !== requestedRevision || state.current !== requestedCurrent) {
+      setRunNotice("Decision discarded because the current state changed.");
       finishDecision(decision, "rejected", "state_changed");
       stopAutoRun("state_changed");
       return false;
     }
     state.moves = payload.moves;
+    if (state.system === "algebra") state.analysis = payload.analysis;
     state.movesRevision = requestedRevision;
     state.selectedId = payload.move.id;
     state.probabilities = payload.rounds.length === 1 && payload.rounds[0].groups.length === 1
@@ -474,15 +592,15 @@ async function jevStep(runId = null) {
       finishDecision(decision, "rejected", "run_cancelled");
       return false;
     }
-    if (state.revision !== requestedRevision || state.current !== requestedCurrent) {
-      setRunNotice("Decision discarded because the current string changed.");
+    if (state.system !== requestedSystem || state.revision !== requestedRevision || state.current !== requestedCurrent) {
+      setRunNotice("Decision discarded because the current state changed.");
       finishDecision(decision, "rejected", "state_changed");
       stopAutoRun("state_changed");
       return false;
     }
     if (payload.move.result.length > Number(elements.maxLength.value)) {
       setRunNotice(
-        `Model move not applied: it would grow the string to ${payload.move.result.length} characters.`,
+        `Model move not applied: the next state would have ${payload.move.result.length} characters.`,
       );
       finishDecision(decision, "rejected", "length_budget");
       stopAutoRun("length_budget");
@@ -492,7 +610,7 @@ async function jevStep(runId = null) {
       autoMode &&
       state.history.some((entry) => entry.value === payload.move.result)
     ) {
-      setRunNotice("Auto-run stopped before revisiting an earlier string.");
+      setRunNotice("Auto-run stopped before revisiting an earlier state.");
       finishDecision(decision, "rejected", "cycle");
       stopAutoRun("cycle");
       return false;
@@ -529,12 +647,13 @@ async function autoRun() {
     return;
   }
   if (!state.providers[elements.provider.value]?.available || !state.moves.length) return;
+  if (state.system === "algebra" && goalReached()) return;
   state.auto = true;
   const runId = ++state.autoRunId;
   setError();
   setRunNotice();
-  const goal = elements.goal.value.trim().toUpperCase();
-  if (!validMiu(goal)) {
+  const goal = goalValue();
+  if (state.system === "miu" && !validMiu(goal)) {
     recordEvent("run_rejected", { goal, reason: "invalid_target" });
     stopAutoRun("invalid_target");
     setError("Target must contain only M, I, and U.");
@@ -542,7 +661,8 @@ async function autoRun() {
     return;
   }
   const goalICount = [...goal].filter((character) => character === "I").length;
-  if (goalICount % 3 === 0 && !elements.exploreImpossible.checked) {
+  const impossible = state.system === "miu" && goalICount % 3 === 0;
+  if (impossible && !elements.exploreImpossible.checked) {
     recordEvent("run_rejected", { goal, reason: "invariant_impossible" });
     stopAutoRun("invariant_impossible");
     setRunNotice(
@@ -551,7 +671,7 @@ async function autoRun() {
     render();
     return;
   }
-  if (goalICount % 3 === 0) {
+  if (impossible) {
     setRunNotice(
       `Exploratory run: the modulo-3 invariant proves ${goal} is unreachable. The run will stop on its safety budgets.`,
     );
@@ -563,7 +683,7 @@ async function autoRun() {
   );
   const maxLength = Math.max(
     8,
-    Math.min(SERVER_MAX_LENGTH, Number(elements.maxLength.value) || 64),
+    Math.min(EXAMPLES[state.system].limit, Number(elements.maxLength.value) || 64),
   );
   const stagnationLimit = Math.max(
     1,
@@ -572,18 +692,18 @@ async function autoRun() {
   elements.maxSteps.value = maxSteps;
   elements.maxLength.value = maxLength;
   elements.stagnationLimit.value = stagnationLimit;
-  let bestDistance = targetDistance(state.current, goal);
+  let bestDistance = progressDistance();
   let stagnantSteps = 0;
   recordEvent("run_started", {
     run_id: runId, current: state.current, goal,
     provider: elements.provider.value, model: elements.model.value.trim(),
     policy: elements.policy.value,
     budgets: { max_steps: maxSteps, max_length: maxLength, stagnation_limit: stagnationLimit },
-    exploratory: goalICount % 3 === 0,
+    exploratory: impossible,
   });
   let stopReason = "no_moves";
   render();
-  while (state.auto && state.moves.length && state.current !== elements.goal.value.trim().toUpperCase()) {
+  while (state.auto && state.moves.length && !goalReached()) {
     if (state.history.length - 1 - startingStep >= maxSteps) {
       setRunNotice(`Auto-run stopped after its ${maxSteps}-step budget.`);
       stopReason = "step_budget";
@@ -595,11 +715,11 @@ async function autoRun() {
       stopReason = "decision_not_applied";
       break;
     }
-    if (state.current === goal) {
+    if (goalReached()) {
       stopReason = "target_reached";
       break;
     }
-    const distance = targetDistance(state.current, goal);
+    const distance = progressDistance();
     if (distance < bestDistance) {
       bestDistance = distance;
       stagnantSteps = 0;
@@ -616,7 +736,7 @@ async function autoRun() {
     await new Promise((resolve) => setTimeout(resolve, Number(elements.delay.value)));
     if (state.autoRunId !== runId) return;
   }
-  if (state.current === goal) stopReason = "target_reached";
+  if (goalReached()) stopReason = "target_reached";
   stopAutoRun(stopReason);
   render();
 }
@@ -637,9 +757,12 @@ elements.reset.addEventListener("click", async () => {
   recordEvent("reset", { current: state.current, history: state.history });
   setError();
   setRunNotice();
-  await setHistory([{ value: "MI", label: "Axiom" }]);
+  await setHistory([{
+    value: state.initial, label: state.system === "miu" ? "Axiom" : "Starting equation",
+  }]);
 });
 elements.goal.addEventListener("input", () => {
+  if (state.system !== "miu") return;
   elements.goal.value = elements.goal.value.toUpperCase().replace(/[^MIU]/g, "");
   updateInvariantNotice();
 });
@@ -651,6 +774,8 @@ elements.provider.addEventListener("change", () => {
   }
 });
 elements.model.addEventListener("input", updateEngineStatus);
+elements.example.addEventListener("change", () => loadExample(elements.example.value));
+elements.loadEquation.addEventListener("click", () => loadExample("algebra", elements.equation.value));
 elements.exportLog.addEventListener("click", exportJournal);
 elements.clearLog.addEventListener("click", () => {
   if (state.busy || state.auto) {

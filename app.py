@@ -14,6 +14,9 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
+
+import algebra
 
 
 ROOT = Path(__file__).resolve().parent
@@ -27,8 +30,16 @@ DEFAULT_PROVIDER = "ollama"
 DEFAULT_MODELS = {"ollama": "nimble:latest", "typesafe": "jev-latest"}
 MAX_BODY_BYTES = 1_000_000
 MAX_MIU_LENGTH = 8_192
+MAX_HISTORY_ENTRIES = 1_024
 CHOICE_KEYS = string.ascii_uppercase
 PROVIDER_CHOICE_LIMITS = {"ollama": len(CHOICE_KEYS), "typesafe": 255}
+SYSTEMS = ("miu", "algebra")
+
+
+def validate_system(value: Any) -> str:
+    if not isinstance(value, str) or value not in SYSTEMS:
+        raise ValueError("system must be miu or algebra")
+    return value
 
 
 def load_env_file(path: Path) -> None:
@@ -163,6 +174,17 @@ def validate_miu(value: Any, field: str) -> str:
     if len(value) > MAX_MIU_LENGTH:
         raise ValueError(f"{field} must not exceed {MAX_MIU_LENGTH} characters")
     return value
+
+
+def validate_history(history: list[str], system: str) -> None:
+    if len(history) > MAX_HISTORY_ENTRIES:
+        raise ValueError(f"history must not exceed {MAX_HISTORY_ENTRIES} entries")
+    if system == "algebra":
+        for item in history:
+            algebra.parse_equation(item)
+    else:
+        for item in history:
+            validate_miu(item, "history")
 
 
 def rewrite_opportunities(value: str) -> int:
@@ -308,7 +330,9 @@ def decision_request(
     candidates: list[dict[str, Any]],
     max_length: int,
     trace: dict[str, Any] | None = None,
+    system: str = "miu",
 ) -> tuple[dict[str, Any], dict[str, float]]:
+    validate_system(system)
     criteria: dict[str, str] = {}
     by_key: dict[str, dict[str, Any]] = {}
     keys = (
@@ -318,12 +342,18 @@ def decision_request(
     )
     for key, move in zip(keys, candidates):
         by_key[key] = move
+        domain_detail = (
+            f"immediate non-duplication rewrites: {rewrite_opportunities(move['result'])}; "
+            f"growth-only trap: {'yes' if is_growth_only_trap(move['result']) else 'no'}; "
+        ) if system == "miu" else (
+            f"position: {move['position']}; justification: {move['detail']}; "
+            f"solved: {move['solved']}; structural progress cost: {move['progress']}; "
+        )
         criteria[key] = (
             f"{move['label']}; result: {move['result']}; "
             f"length: {len(move['result'])}; "
             f"length change: {len(move['result']) - len(current):+d}; "
-            f"immediate non-duplication rewrites: {rewrite_opportunities(move['result'])}; "
-            f"growth-only trap: {'yes' if is_growth_only_trap(move['result']) else 'no'}; "
+            f"{domain_detail}"
             f"already visited: {'yes' if move['result'] in history else 'no'}"
         )
 
@@ -346,18 +376,37 @@ def decision_request(
             "doubling can never create III or UU."
         ),
     }
+    instructions = (
+        "Select the legal move most promising for reaching the target. Prefer the "
+        "target immediately, then novel states that appear to make structural "
+        "progress. Strongly avoid revisiting states or increasing length without "
+        "creating an immediate III or UU rewrite opportunity."
+    )
+    if system == "algebra":
+        state = {
+            "formal_system": "Single-variable linear equations over the rational numbers",
+            "current_equation": current, "goal": goal,
+            "recent_derivation": history[-12:], "candidate_moves": criteria,
+            "invariant": "Every supplied rewrite preserves exactly the solution set. "
+                         "Division is permitted only by known nonzero numeric constants.",
+            "search_guidance": "Isolate x on the left with a rational number on the right, "
+                               "or reduce an identity/contradiction to a numeric equality. "
+                               "Consider dividing before distributing. Avoid needless expansion "
+                               "and revisiting equations. The finite menu is a declared algebra "
+                               "vocabulary, not every possible algebraic transformation.",
+        }
+        instructions = (
+            "Choose one supplied equivalent rewrite that makes a short, clear derivation "
+            "toward an isolated x or a numeric identity/contradiction. "
+            "Do not invent an equation or a transformation."
+        )
     request_body: dict[str, Any] = {
         "model": model,
         "state": state,
         "questions": {
             "next_move": {
                 "type": "choice",
-                "instructions": (
-                    "Select the legal move most promising for reaching the target. Prefer the "
-                    "target immediately, then novel states that appear to make structural "
-                    "progress. Strongly avoid revisiting states or increasing length without "
-                    "creating an immediate III or UU rewrite opportunity."
-                ),
+                "instructions": instructions,
                 "criteria": criteria,
             }
         },
@@ -428,7 +477,8 @@ def decision_request(
             raise RuntimeError(f"{provider_name} returned an invalid probability")
         probabilities[by_key[key]["id"]] = probability
     selection: dict[str, Any] = {}
-    selected = select_move(
+    selector = select_move if system == "miu" else algebra.select_move
+    selected = selector(
         policy,
         current,
         goal,
@@ -463,14 +513,16 @@ def choose_move(
     history: list[str],
     moves: list[dict[str, Any]],
     max_length: int = 64,
+    system: str = "miu",
 ) -> dict[str, Any]:
+    validate_system(system)
     if not moves:
         raise ValueError("There are no legal moves from the current string")
 
     started = time.perf_counter()
     rounds: list[dict[str, Any]] = []
     result: dict[str, Any] = {
-        "schema_version": 1, "current": current, "goal": goal,
+        "schema_version": 1, "system": system, "current": current, "goal": goal,
         "provider": provider, "model": model, "policy": policy,
         "history": list(history), "max_length": max_length, "moves": moves,
         "rounds": rounds, "provider_calls": 0, "override_count": 0,
@@ -510,7 +562,7 @@ def choose_move(
                 try:
                     winner, probabilities = decision_request(
                         provider, model, policy, current, goal, history,
-                        group, max_length, trace=group_trace,
+                        group, max_length, trace=group_trace, system=system,
                     )
                 except RuntimeError as error:
                     group_trace["error"] = str(error)
@@ -563,7 +615,8 @@ class RequestHandler(BaseHTTPRequestHandler):
             )
             return
 
-        requested = "index.html" if self.path in ("/", "") else self.path.lstrip("/")
+        path_only = urlsplit(self.path).path
+        requested = "index.html" if path_only in ("/", "") else path_only.lstrip("/")
         path = (WEB_ROOT / requested).resolve()
         if WEB_ROOT.resolve() not in path.parents or not path.is_file():
             self.send_error(HTTPStatus.NOT_FOUND)
@@ -579,13 +632,27 @@ class RequestHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         try:
             payload = self.read_json()
+            system = validate_system(payload.get("system", "miu"))
             if self.path == "/api/moves":
+                if system == "algebra":
+                    self.send_json(algebra.describe(payload.get("current")))
+                    return
                 current = validate_miu(payload.get("current"), "current")
-                self.send_json({"moves": legal_moves(current)})
+                self.send_json({"system": system, "current": current, "moves": legal_moves(current)})
                 return
             if self.path == "/api/choose":
-                current = validate_miu(payload.get("current"), "current")
-                goal = validate_miu(payload.get("goal", "MU"), "goal")
+                if system == "algebra":
+                    analysis = algebra.describe(payload.get("current"))
+                    current = analysis["current"]
+                    goal = payload.get("goal", algebra.GOAL)
+                    if goal != algebra.GOAL:
+                        raise ValueError(f"Algebra goal must be {algebra.GOAL}")
+                    moves = analysis["moves"]
+                else:
+                    current = validate_miu(payload.get("current"), "current")
+                    goal = validate_miu(payload.get("goal", "MU"), "goal")
+                    analysis = None
+                    moves = legal_moves(current)
                 provider = payload.get("provider", DEFAULT_PROVIDER)
                 if not isinstance(provider, str) or provider not in DEFAULT_MODELS:
                     raise ValueError("provider must be ollama or typesafe")
@@ -595,21 +662,22 @@ class RequestHandler(BaseHTTPRequestHandler):
                     raise ValueError("policy must be guided or model")
                 history = payload.get("history", [])
                 max_length = payload.get("max_length", 64)
+                absolute_limit = algebra.MAX_LENGTH if system == "algebra" else MAX_MIU_LENGTH
                 if not isinstance(model, str) or not model.strip():
                     raise ValueError("model must be a non-empty string")
                 if not isinstance(history, list) or not all(
                     isinstance(item, str) for item in history
                 ):
                     raise ValueError("history must be a list of strings")
+                validate_history(history, system)
                 if (
                     not isinstance(max_length, int)
                     or isinstance(max_length, bool)
-                    or not 8 <= max_length <= MAX_MIU_LENGTH
+                    or not 8 <= max_length <= absolute_limit
                 ):
                     raise ValueError(
-                        f"max_length must be an integer from 8 to {MAX_MIU_LENGTH}"
+                        f"max_length must be an integer from 8 to {absolute_limit}"
                     )
-                moves = legal_moves(current)
                 result = choose_move(
                     provider,
                     model,
@@ -619,7 +687,12 @@ class RequestHandler(BaseHTTPRequestHandler):
                     history,
                     moves,
                     max_length,
+                    system,
                 )
+                if analysis is not None:
+                    result["analysis"] = {
+                        key: value for key, value in analysis.items() if key != "moves"
+                    }
                 result["provider"] = provider
                 result["policy"] = policy
                 result["moves"] = moves

@@ -4,9 +4,10 @@ Guidance for coding agents and contributors working on MIU × Jev.
 
 ## Project in one paragraph
 
-MIU × Jev is a dependency-free Python web app for Hofstadter's MIU formal
-system. The Python engine enumerates every legal rewrite from the current
-string. A decision provider—local Ollama 0.35.0+/Nimble by default, or hosted
+MIU × Jev is a dependency-free Python web app with a shared menu for Hofstadter's
+MIU system and exact single-variable algebra. The Python engines generate
+all MIU rewrites or a finite declared algebra rewrite vocabulary.
+A decision provider—local Ollama 0.35.0+/Nimble by default, or hosted
 TypeSafe/Jev when configured—may choose only from that generated menu. The
 model supplies strategy; deterministic code supplies validity.
 
@@ -26,7 +27,7 @@ python app.py
 python -m unittest -v
 
 # Syntax checks
-python -m py_compile app.py test_app.py benchmark.py test_benchmark.py
+python -m py_compile app.py algebra.py test_app.py test_algebra.py benchmark.py test_benchmark.py
 node --check web\app.js
 node --test test_web.js
 ```
@@ -38,6 +39,8 @@ Python package dependencies and no frontend build step.
 
 ```text
 app.py          MIU rules, provider clients, HTTP API, static file server
+algebra.py      exact linear-equation parser, rewrite menu, and guidance
+test_algebra.py exact equivalence, limits, policies, and shared-provider tests
 test_app.py     unit tests for rules, provider limits, and configuration
 test_web.js     browser-state regression tests using Node.js built-ins
 benchmark.py    controlled baseline/provider comparisons and bounded BFS
@@ -55,8 +58,8 @@ Preserve these properties in every change:
 
 1. **The server owns legality.** Never accept a client-supplied move list as
    authoritative. Recompute legal moves from `current` in `app.py`.
-2. **The model only selects.** A provider must never generate the next MIU
-   string directly. Map its selected option back to a server-generated move.
+2. **The model only selects.** A provider must never generate the next string
+   or equation directly. Map its selected option back to a server-generated move.
 3. **Every derivation step is inspectable.** Keep rule, position, result, and
    history visible enough to audit.
 4. **Manual and model moves use the same menu.** Do not create a privileged AI
@@ -66,7 +69,8 @@ Preserve these properties in every change:
 6. **Safety budgets are not formal rules.** Auto-run may stop for length,
    steps, or cycles, but the legal menu must still show every MIU rewrite.
 7. **Guidance is strategy, not legality.** The default guided policy may rank
-   or prefer legal moves, but it must never synthesize or apply a non-MIU move.
+   or prefer legal moves, but it must never synthesize a move outside the
+   selected system's server-generated menu.
 
 ## MIU rule gotchas
 
@@ -92,15 +96,38 @@ Important details:
   why `MU` is unreachable from `MI`, but it must not suppress legal moves.
 - The number of `I` symbols modulo 3 is a teaching aid, not a move validator.
 
+## Algebra invariants
+
+- Use exact `Fraction` arithmetic and the bounded syntax-tree parser in
+  `algebra.py`; never `eval`, floating point, or a provider-generated equation.
+- Support linear equations over rationals with one variable, `x`. Reject
+  nonlinear products, variable denominators, zero division, and unsupported
+  notation explicitly.
+- The seven rule families are finite vocabulary, not all possible algebra.
+  Every offered rewrite must preserve the exact solution set and round-trip
+  through formatting/parsing without changing its syntax tree.
+- Algebra limits are 512 characters, 128 nodes, depth below 24, and 128-bit
+  numerators/denominators. Candidate construction belongs inside the
+  limit-catching path: count omitted unrepresentable moves without discarding
+  the valid remainder of the menu. Do not conflate these bounds with the
+  separate execution-length budget.
+- Goal recognition is server-owned: `x = rational`, or a numeric equality
+  classifying an identity/contradiction. Do not apply MIU's invariant.
+- Algebra guidance prefers in-budget, solved, then unvisited results where
+  available, followed by structural-cost scoring and model probabilities.
+  The raw model-only policy must remain available.
+- Use the same provider transport, tournaments, and evidence format as MIU,
+  but domain-specific prompts and selection heuristics.
+
 ## Provider contract
 
 Both providers receive the same state:
 
-- current string;
-- target string;
+- current state;
+- target string or algebra goal;
 - recent derivation;
 - the candidate legal moves; and
-- the modulo-three invariant as context.
+- domain context: MIU's modulo-three invariant or algebra solution preservation.
 
 They return a choice and probabilities. Keep provider-specific behavior behind
 `decision_request`.
@@ -111,7 +138,7 @@ merge them into a global distribution. Explanations describe actual policy
 filters and scores, not inferred model reasoning. Singleton groups make no
 provider call and must not invent a model probability.
 
-The default `guided` policy is intentionally reduction-first. If a group has
+The default MIU `guided` policy is intentionally reduction-first. If a group has
 any shortening moves, `select_move` must choose within that subset. Otherwise
 it combines provider probabilities with novelty, contraction-opportunity, and
 growth heuristics. It must also avoid a growth-only trap when a productive
@@ -169,6 +196,10 @@ headers.
 - `POST /api/moves` accepts `current` and returns server-generated legal moves.
 - `POST /api/choose` accepts `current`, `goal`, `provider`, `model`, and
   `history`; it recomputes moves before asking the provider.
+- Both POST endpoints accept `system` (`miu` by default, or `algebra`).
+  Algebra returns normalized equations and server analysis. Its only goal is
+  `Isolate x`, and its `max_length` range is 8–512. Preserve omitted-system MIU
+  compatibility.
 
 Validate all public inputs. MIU strings must be non-empty and contain only
 `M`, `I`, and `U`. Provider names are restricted to `ollama` and `typesafe`.
@@ -177,6 +208,13 @@ from TypeSafe to Ollama 0.35.0+ or vice versa.
 
 ## Frontend gotchas
 
+- The example selector starts a new derivation while retaining provider/model
+  settings and the shared journal. Validate a new equation before replacing
+  the active state. Algebra reset uses the loaded initial equation.
+- Bind asynchronous menus and decisions to system as well as revision/current.
+  Disable example switching and equation loading during decisions and auto-run.
+- Algebra uses server solved/progress metadata, not edit distance or modulo
+  three. Keep identities and contradictions distinct from failure.
 - Provider availability comes from `/api/health`.
 - Keep Ollama selected by default even when unavailable; hosted requests
   require an explicit provider switch.
@@ -190,7 +228,7 @@ from TypeSafe to Ollama 0.35.0+ or vice versa.
   reaching the target, exhausting its step budget, selecting an over-limit
   next string, selecting an already visited state, or exhausting its
   no-progress budget.
-- Auto-run must preflight the modulo-three invariant. Exploratory override is
+- MIU auto-run must preflight the modulo-three invariant. Exploratory override is
   enabled by default so the `MI → MU` experiment runs out of the box; show a
   clear impossibility warning and rely on safety budgets. When the user
   disables the override, refuse a provably unreachable target.
@@ -199,7 +237,7 @@ from TypeSafe to Ollama 0.35.0+ or vice versa.
   move whenever one exists.
 - Auto-run safety limits apply before a move is committed. Manual selection
   remains available for every legal move within the server's absolute
-  8,192-character input bound.
+  8,192-character MIU input bound or algebra's representation limits.
 - Bind every provider response to the current string used for its request.
   Disable manual moves while a decision or auto-run is active, and discard a
   delayed response if the current string changed before it can be applied.
@@ -215,6 +253,8 @@ from TypeSafe to Ollama 0.35.0+ or vice versa.
 Add or update tests when changing:
 
 - any MIU rule or occurrence-scanning behavior;
+- algebra parsing, rewrite equivalence, representation limits, or goal detection;
+- switching examples, loading equations, or cross-example journal behavior;
 - provider selection or limits;
 - guided or model-only selection policy;
 - heuristic scoring and reduction-first behavior;
@@ -227,16 +267,17 @@ At minimum, run:
 
 ```powershell
 python -m unittest -v
-python -m py_compile app.py test_app.py benchmark.py test_benchmark.py
+python -m py_compile app.py algebra.py test_app.py test_algebra.py benchmark.py test_benchmark.py
 node --check web\app.js
 node --test test_web.js
 ```
 
 For provider changes, also perform one live `/api/choose` request for each
-configured provider. Use harmless MIU state only. Never place a real key in a
+configured provider, covering both examples when shared routing changes.
+Use harmless MIU states or sample algebra equations only. Never place a real key in a
 command, test fixture, source file, log, or commit.
 
-`python benchmark.py --output baseline-results.json` runs keyless baselines.
+`python benchmark.py --output baseline-results.json` runs MIU-only keyless baselines.
 Model comparisons require explicit `--providers ollama` or
 `--providers ollama typesafe`. Apply the same execution budgets to every
 strategy, keep impossible-target exploration out of reachable success rates,

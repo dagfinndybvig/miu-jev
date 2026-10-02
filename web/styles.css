@@ -58,6 +58,7 @@ h1 {
 }
 
 h1 span { color: var(--acid); }
+h1 .example-title { color: var(--text); }
 
 .subtitle { margin: 14px 0 0; color: var(--muted); }
 
@@ -92,6 +93,11 @@ h1 span { color: var(--acid); }
 }
 
 .stage { padding: 28px; }
+.example-picker { margin-bottom: 22px; }
+.example-picker select { margin-top: 8px; max-width: 460px; display: block; }
+.equation-editor { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 24px; align-items: center; }
+.equation-editor label, .equation-editor p { flex-basis: 100%; }
+.equation-editor input { flex: 1; min-width: 180px; font-family: "Cascadia Code", Consolas, monospace; }
 
 .stage-top {
   display: flex;
