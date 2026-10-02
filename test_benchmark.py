@@ -8,7 +8,9 @@ import unittest
 from unittest.mock import patch
 
 from app import DecisionError, legal_moves
-from benchmark import generate_cases, run_trial, summarize, target_distance
+import benchmark
+import lambda_calc
+from benchmark import generate_cases, generate_lambda_cases, run_trial, summarize, target_distance
 
 
 class BenchmarkTests(unittest.TestCase):
@@ -109,6 +111,67 @@ class BenchmarkTests(unittest.TestCase):
         self.assertEqual(target_distance("MIIII", "MUI"), 3)
         self.assertEqual(target_distance("MU", "MU"), 0)
 
+    def test_lambda_cases_are_reproducible_with_legal_normal_order_witnesses(self):
+        first = generate_lambda_cases(123, 5)
+        self.assertEqual(first, generate_lambda_cases(123, 5))
+        cases, reference = first
+        self.assertEqual(len(cases), 6)
+        self.assertEqual({case["kind"] for case in cases}, {"reachable", "trap", "growth", "impossible"})
+        self.assertEqual(cases[-1]["term"], benchmark.OMEGA)
+        for case in cases:
+            if case["kind"] == "impossible":
+                self.assertIsNone(case["reference_steps"])
+                self.assertIn("no normal form", case["proof"])
+                continue
+            current = lambda_calc.describe(case["term"])["current"]
+            for step in case["witness"]:
+                self.assertEqual(step["current"], current)
+                self.assertIn(step["move"], lambda_calc.describe(current)["moves"])
+                current = step["move"]["result"]
+            self.assertTrue(lambda_calc.describe(current)["solved"])
+            self.assertEqual(current, case["goal"])
+            self.assertEqual(len(case["witness"]), case["reference_steps"])
+        self.assertEqual(
+            reference["scope"],
+            "Normal-order reference paths, which reach a normal form whenever one exists.",
+        )
+
+    def test_lambda_traps_need_strategy_and_omega_never_normalizes(self):
+        for term, kind in benchmark.lambda_terms():
+            if kind != "trap":
+                continue
+            state = lambda_calc.describe(term)
+            self.assertGreaterEqual(state["redexes"], 2)
+            _, normal_form = lambda_calc.normal_order_witness(term, max_steps=20)
+            self.assertEqual(normal_form, "λy.y")
+        self.assertFalse(lambda_calc.describe(benchmark.OMEGA)["solved"])
+
+    def test_lambda_heuristic_baseline_reaches_normal_forms_within_budget(self):
+        cases, _ = generate_lambda_cases(123, 5)
+        for case in cases:
+            result = run_trial(case, "heuristic", 1, 12, 512, 10, system="lambda")
+            if case["kind"] == "impossible":
+                self.assertFalse(result["success"])
+            else:
+                self.assertTrue(result["success"], (case["term"], result["outcome"]))
+                self.assertLessEqual(result["steps"], case["reference_steps"] + 2)
+        with self.assertRaisesRegex(ValueError, "explicit provider"):
+            run_trial(cases[0], "model", 1, 5, 512, 5, system="lambda")
+
+    def test_lambda_run_trial_threads_system_and_hints_to_the_provider(self):
+        case = generate_lambda_cases(123, 5)[0][0]
+        def fake_choose(provider, model, policy, current, goal, history, moves,
+                        max_length, system, hints):
+            return {"move": moves[0], "rounds": [], "provider_calls": 0, "override_count": 0}
+
+        with patch("benchmark.choose_move", side_effect=fake_choose) as choose:
+            result = run_trial(case, "model", 1, 3, 512, 5, "ollama", "nimble",
+                               system="lambda", hints=False)
+        self.assertEqual(result["system"], "lambda")
+        self.assertFalse(result["hints"])
+        self.assertEqual(choose.call_args.kwargs["system"], "lambda")
+        self.assertEqual(choose.call_args.kwargs["hints"], False)
+
     def test_cli_produces_complete_keyless_comparison(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "results.json"
@@ -122,6 +185,26 @@ class BenchmarkTests(unittest.TestCase):
         self.assertTrue(report["completed"])
         self.assertEqual(len(report["trials"]), 6)
         self.assertEqual(report["configuration"]["providers"], [])
+        self.assertTrue(all(row["provider_calls"] == 0 for row in report["trials"]))
+        self.assertEqual(report["summary"], summarize(report["trials"]))
+
+
+    def test_cli_produces_complete_keyless_lambda_comparison(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "results.json"
+            process = subprocess.run(
+                [sys.executable, str(Path(__file__).with_name("benchmark.py")),
+                 "--system", "lambda", "--targets", "3", "--repeats", "1",
+                 "--output", str(output)],
+                capture_output=True, text=True, timeout=60, check=True,
+            )
+            report = json.loads(output.read_text(encoding="utf-8"))
+        self.assertIn("Results saved", process.stdout)
+        self.assertTrue(report["completed"])
+        self.assertEqual(report["system"], "lambda")
+        self.assertIn("lambda_calc.py", report["source_sha256"])
+        self.assertEqual(report["configuration"]["max_length"], 512)
+        self.assertEqual(len(report["trials"]), 8)
         self.assertTrue(all(row["provider_calls"] == 0 for row in report["trials"]))
         self.assertEqual(report["summary"], summarize(report["trials"]))
 
