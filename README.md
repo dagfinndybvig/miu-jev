@@ -479,6 +479,8 @@ The browser UI provides:
 - **Ask Jev for one move** to request one decision from the selected provider;
 - **Auto-run** to continue choosing until stopped, stuck, or at the target;
 - configurable auto-run step and string-length budgets;
+- invariant preflight before automatic search;
+- stagnation detection based on edit distance to the target;
 - automatic stopping before cycles or over-limit growth;
 - a provider switch between local Ollama 0.35.0+/Nimble and hosted TypeSafe/Jev;
 - a **guided** reduction-first policy and a **model only** comparison mode;
@@ -534,13 +536,20 @@ strategy can make auto-run succeed. Rule 2 can also double a string
 exponentially. Auto-run therefore has three guardrails:
 
 - a step budget, defaulting to 40 moves;
-- a maximum next-string length, defaulting to 256 characters; and
+- a maximum next-string length, defaulting to 64 characters;
+- a stagnation budget, defaulting to 10 steps without getting closer to the
+  target;
 - cycle detection that stops before revisiting an earlier string.
 
 These are execution safeguards, not new MIU rules. The complete legal menu
 remains visible, and a person may still apply any legal move manually. The
 server additionally rejects MIU strings over 8,192 characters to bound request
 and rendering costs.
+
+Before auto-run begins, the app applies the modulo-three invariant. A target
+such as `MU`, with zero `I` symbols, is rejected immediately because no search
+can reach it from `MI`. Users may explicitly enable impossible-target
+exploration when they want to observe model behavior despite the proof.
 
 ### Guided selection heuristics
 

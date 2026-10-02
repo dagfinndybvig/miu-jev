@@ -223,11 +223,18 @@ def select_move(
     candidates: list[dict[str, Any]],
     model_choice: dict[str, Any],
     probabilities: dict[str, float],
+    max_length: int,
 ) -> dict[str, Any]:
     if policy == "model":
         return model_choice
     if policy != "guided":
         raise ValueError("policy must be guided or model")
+
+    bounded = [
+        move for move in candidates if len(move["result"]) <= max_length
+    ]
+    if bounded:
+        candidates = bounded
 
     targets = [move for move in candidates if move["result"] == goal]
     if targets:
@@ -264,6 +271,7 @@ def decision_request(
     goal: str,
     history: list[str],
     candidates: list[dict[str, Any]],
+    max_length: int,
 ) -> tuple[dict[str, Any], dict[str, float]]:
     criteria: dict[str, str] = {}
     by_key: dict[str, dict[str, Any]] = {}
@@ -371,6 +379,7 @@ def decision_request(
         candidates,
         by_key[selected_key],
         probabilities,
+        max_length,
     )
     return selected, probabilities
 
@@ -383,6 +392,7 @@ def choose_move(
     goal: str,
     history: list[str],
     moves: list[dict[str, Any]],
+    max_length: int = 64,
 ) -> dict[str, Any]:
     if not moves:
         raise ValueError("There are no legal moves from the current string")
@@ -401,7 +411,14 @@ def choose_move(
                 probabilities = {winner["id"]: 1.0}
             else:
                 winner, probabilities = decision_request(
-                    provider, model, policy, current, goal, history, group
+                    provider,
+                    model,
+                    policy,
+                    current,
+                    goal,
+                    history,
+                    group,
+                    max_length,
                 )
             winners.append(winner)
             round_probabilities.update(probabilities)
@@ -487,15 +504,31 @@ class RequestHandler(BaseHTTPRequestHandler):
                 if policy not in ("guided", "model"):
                     raise ValueError("policy must be guided or model")
                 history = payload.get("history", [])
+                max_length = payload.get("max_length", 64)
                 if not isinstance(model, str) or not model.strip():
                     raise ValueError("model must be a non-empty string")
                 if not isinstance(history, list) or not all(
                     isinstance(item, str) for item in history
                 ):
                     raise ValueError("history must be a list of strings")
+                if (
+                    not isinstance(max_length, int)
+                    or isinstance(max_length, bool)
+                    or not 8 <= max_length <= MAX_MIU_LENGTH
+                ):
+                    raise ValueError(
+                        f"max_length must be an integer from 8 to {MAX_MIU_LENGTH}"
+                    )
                 moves = legal_moves(current)
                 result = choose_move(
-                    provider, model, policy, current, goal, history, moves
+                    provider,
+                    model,
+                    policy,
+                    current,
+                    goal,
+                    history,
+                    moves,
+                    max_length,
                 )
                 result["provider"] = provider
                 result["policy"] = policy

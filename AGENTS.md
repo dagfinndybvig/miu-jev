@@ -174,7 +174,13 @@ from TypeSafe to Ollama 0.35.0+ or vice versa.
   small change.
 - Auto-run must remain stoppable and must stop on an API error, no legal moves,
   reaching the target, exhausting its step budget, selecting an over-limit
-  next string, or selecting an already visited state.
+  next string, selecting an already visited state, or exhausting its
+  no-progress budget.
+- Auto-run must preflight the modulo-three invariant and refuse a provably
+  unreachable target unless the user explicitly enables exploratory override.
+- The default model-move length budget is 64 characters. Pass it to
+  `/api/choose` as `max_length`; guided selection should prefer an in-budget
+  move whenever one exists.
 - Auto-run safety limits apply before a move is committed. Manual selection
   remains available for every legal move within the server's absolute
   8,192-character input bound.

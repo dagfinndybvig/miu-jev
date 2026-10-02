@@ -105,6 +105,7 @@ class SelectionTests(unittest.TestCase):
                 "MU",
                 ["MI"],
                 legal_moves("MI"),
+                64,
             )
 
     @patch("app.decision_request")
@@ -121,7 +122,7 @@ class SelectionTests(unittest.TestCase):
             for index in range(30)
         ]
         decide.side_effect = (
-            lambda provider, model, policy, current, goal, history, candidates: (
+            lambda provider, model, policy, current, goal, history, candidates, max_length: (
                 candidates[-1],
                 {
                     candidate["id"]: 1 / len(candidates)
@@ -173,6 +174,7 @@ class SelectionTests(unittest.TestCase):
             moves,
             growth,
             {growth["id"]: 0.99, reduction["id"]: 0.01},
+            64,
         )
         self.assertEqual(selected["id"], reduction["id"])
 
@@ -189,6 +191,7 @@ class SelectionTests(unittest.TestCase):
             moves,
             trapped,
             {trapped["id"]: 0.999, productive["id"]: 0.001},
+            64,
         )
         self.assertEqual(selected["id"], productive["id"])
 
@@ -197,9 +200,26 @@ class SelectionTests(unittest.TestCase):
         moves = legal_moves(current)
         growth = next(move for move in moves if move["rule"] == 2)
         selected = select_move(
-            "model", current, "MU", [current], moves, growth, {}
+            "model", current, "MU", [current], moves, growth, {}, 64
         )
         self.assertEqual(selected["id"], growth["id"])
+
+    def test_guided_policy_respects_length_budget(self):
+        current = "M" + ("I" * 8)
+        moves = legal_moves(current)
+        oversized = next(move for move in moves if move["rule"] == 2)
+        bounded = next(move for move in moves if move["rule"] == 3)
+        selected = select_move(
+            "guided",
+            current,
+            "MUI",
+            [current],
+            moves,
+            oversized,
+            {oversized["id"]: 0.99, bounded["id"]: 0.01},
+            10,
+        )
+        self.assertEqual(selected["id"], bounded["id"])
 
 
 if __name__ == "__main__":

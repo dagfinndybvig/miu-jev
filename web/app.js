@@ -33,11 +33,29 @@ const elements = {
   delay: $("delay"),
   maxSteps: $("maxSteps"),
   maxLength: $("maxLength"),
+  stagnationLimit: $("stagnationLimit"),
+  exploreImpossible: $("exploreImpossible"),
   runNotice: $("runNotice"),
 };
 
 function validMiu(value) {
   return /^[MIU]+$/.test(value);
+}
+
+function targetDistance(value, target) {
+  const previous = Array.from({ length: target.length + 1 }, (_, index) => index);
+  for (let row = 1; row <= value.length; row += 1) {
+    const current = [row];
+    for (let column = 1; column <= target.length; column += 1) {
+      current[column] = Math.min(
+        current[column - 1] + 1,
+        previous[column] + 1,
+        previous[column - 1] + (value[row - 1] === target[column - 1] ? 0 : 1),
+      );
+    }
+    previous.splice(0, previous.length, ...current);
+  }
+  return previous[target.length];
 }
 
 async function api(path, body) {
@@ -73,6 +91,8 @@ function setBusy(busy) {
   elements.policy.disabled = busy || state.auto;
   elements.maxSteps.disabled = busy || state.auto;
   elements.maxLength.disabled = busy || state.auto;
+  elements.stagnationLimit.disabled = busy || state.auto;
+  elements.exploreImpossible.disabled = busy || state.auto;
 }
 
 function render() {
@@ -161,6 +181,10 @@ async function jevStep(autoMode = false) {
       model: elements.model.value.trim(),
       policy: elements.policy.value,
       history: state.history.map((entry) => entry.value),
+      max_length: Math.max(
+        8,
+        Math.min(SERVER_MAX_LENGTH, Number(elements.maxLength.value) || 64),
+      ),
     });
     state.moves = payload.moves;
     state.selectedId = payload.move.id;
@@ -174,9 +198,9 @@ async function jevStep(autoMode = false) {
       setRunNotice("Auto-run stopped.");
       return false;
     }
-    if (autoMode && payload.move.result.length > Number(elements.maxLength.value)) {
+    if (payload.move.result.length > Number(elements.maxLength.value)) {
       setRunNotice(
-        `Auto-run stopped before a move that would grow the string to ${payload.move.result.length} characters.`,
+        `Model move not applied: it would grow the string to ${payload.move.result.length} characters.`,
       );
       state.auto = false;
       return false;
@@ -213,6 +237,16 @@ async function autoRun() {
   }
   setError();
   setRunNotice();
+  const goal = elements.goal.value.trim().toUpperCase();
+  const goalICount = [...goal].filter((character) => character === "I").length;
+  if (goalICount % 3 === 0 && !elements.exploreImpossible.checked) {
+    state.auto = false;
+    setRunNotice(
+      `Auto-run skipped: the modulo-3 invariant proves ${goal} is unreachable from MI. Enable impossible-target exploration to override.`,
+    );
+    render();
+    return;
+  }
   const startingStep = state.history.length - 1;
   const maxSteps = Math.max(
     1,
@@ -220,10 +254,17 @@ async function autoRun() {
   );
   const maxLength = Math.max(
     8,
-    Math.min(SERVER_MAX_LENGTH, Number(elements.maxLength.value) || 256),
+    Math.min(SERVER_MAX_LENGTH, Number(elements.maxLength.value) || 64),
+  );
+  const stagnationLimit = Math.max(
+    1,
+    Math.min(100, Number(elements.stagnationLimit.value) || 10),
   );
   elements.maxSteps.value = maxSteps;
   elements.maxLength.value = maxLength;
+  elements.stagnationLimit.value = stagnationLimit;
+  let bestDistance = targetDistance(state.current, goal);
+  let stagnantSteps = 0;
   render();
   while (state.auto && state.moves.length && state.current !== elements.goal.value.trim().toUpperCase()) {
     if (state.history.length - 1 - startingStep >= maxSteps) {
@@ -232,6 +273,19 @@ async function autoRun() {
     }
     const moved = await jevStep(true);
     if (!moved) break;
+    const distance = targetDistance(state.current, goal);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      stagnantSteps = 0;
+    } else {
+      stagnantSteps += 1;
+    }
+    if (stagnantSteps >= stagnationLimit) {
+      setRunNotice(
+        `Auto-run stopped after ${stagnationLimit} steps without getting closer to ${goal}.`,
+      );
+      break;
+    }
     await new Promise((resolve) => setTimeout(resolve, Number(elements.delay.value)));
   }
   state.auto = false;
