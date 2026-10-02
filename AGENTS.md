@@ -186,6 +186,9 @@ from TypeSafe to Ollama 0.35.0+ or vice versa.
 - Auto-run safety limits apply before a move is committed. Manual selection
   remains available for every legal move within the server's absolute
   8,192-character input bound.
+- Bind every provider response to the current string used for its request.
+  Disable manual moves while a decision or auto-run is active, and discard a
+  delayed response if the current string changed before it can be applied.
 - Keep manual selection, undo, reset, probabilities, and derivation history
   working for both providers.
 - Avoid putting secrets or provider authorization logic in `web/app.js`.
