@@ -7,7 +7,7 @@ engine generates the complete menu of legal moves, a decision model evaluates
 that menu, and deterministic code executes the selection and records every
 step. The same provider, controls, and decision log drive two formal systems:
 **Algebra × Jev**, exact single-variable linear algebra over the rationals,
-and **MIU × Jev**, Hofstadter's MU puzzle. **Guided** mode uses heuristics with
+and **MIU × Jev**, Hofstadter's MU puzzle - the latter mostly included for historical inspiration, it is a bit too simple to really benefit. **Guided** mode uses heuristics with
 model-assisted ranking; **Model only** preserves the provider's choice,
 subject to execution limits. Local **Ollama 0.35.0 or later** with Nimble is
 the default; TypeSafe's hosted Jev API is an optional secondary provider. In
