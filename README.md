@@ -1,3 +1,5 @@
+<img width="503" height="609" alt="geb" src="https://github.com/user-attachments/assets/139955d3-5003-4fe6-9b2d-950d2e4cd045" />
+
 # MIU × Jev
 
 **MIU × Jev** is an experiment in constrained machine choice. A formal engine
