@@ -1,24 +1,30 @@
 <img width="658" height="1000" alt="geb2" src="https://github.com/user-attachments/assets/5a434868-854f-44a4-b2e5-bc93a3014b0a" />
 
-# MIU × Jev
+# Formalism × Jev
 
-**MIU × Jev** is an experiment in constrained machine choice. A formal engine
-generates a valid rewrite menu, and a decision model evaluates it. An example
-menu switches between **MIU (the MU puzzle)** and **single-variable algebra**,
-using the same provider, controls, and decision log. MIU enumerates every legal
-rewrite; algebra offers a finite, declared vocabulary of equivalent
-transformations. **Guided** mode uses heuristics with model-assisted ranking;
-**Model only** preserves the provider's choice, subject to execution limits.
-Local **Ollama 0.35.0 or later** with Nimble is the
-default; TypeSafe's hosted Jev API is an optional secondary provider. In either
-mode, the selected policy determines *which* legal path to follow, but it can never
-invent a rule, alter a state directly, or make an illegal move.
+**Formalism × Jev** is an experiment in constrained machine choice. A formal
+engine generates the complete menu of legal moves, a decision model evaluates
+that menu, and deterministic code executes the selection and records every
+step. The same provider, controls, and decision log drive two formal systems:
+**Algebra × Jev**, exact single-variable linear algebra over the rationals,
+and **MIU × Jev**, Hofstadter's MU puzzle. **Guided** mode uses heuristics with
+model-assisted ranking; **Model only** preserves the provider's choice,
+subject to execution limits. Local **Ollama 0.35.0 or later** with Nimble is
+the default; TypeSafe's hosted Jev API is an optional secondary provider. In
+either mode, the selected policy determines *which* legal path to follow, but
+it can never invent a rule, alter a state directly, or make an illegal move.
 
 The result is a small, inspectable example of an AI operating inside hard
 symbolic boundaries:
 
 > The formal system determines what is legal. The selected policy determines
 > how model advice is used.
+
+That is the whole philosophy. Any formal system with a computable, finite menu
+of legal moves admits the same division of labor: deterministic code owns
+soundness, the model contributes judgment among legal alternatives, and a
+complete trace keeps the boundary inspectable. Algebra is where this pattern
+does real work; MIU is where it began.
 
 ## Quick start
 
@@ -61,6 +67,86 @@ Ollama remains selected even when it is unavailable and a TypeSafe key is
 configured. Hosted decisions require an explicit switch to TypeSafe; there is
 no automatic local-to-hosted fallback. Without an available provider, manual
 exploration still works.
+
+## Algebra × Jev
+
+Algebra is the practical half of the experiment: solve single-variable linear
+equations over the rational numbers using exact arithmetic and a finite,
+declared rewrite vocabulary. The engine uses exact `Fraction` arithmetic and a
+bounded syntax-tree parser—never `eval`, floating point, or a
+provider-generated equation.
+
+The supported language has one variable, `x`, integers, fractions, ASCII
+`+ - * /`, parentheses, and implicit multiplication such as `2x` or `2(x+3)`.
+Multiplication and division have equal precedence and associate left to
+right; use parentheses to group a denominator. Decimals, powers, functions,
+other variables, variable denominators, and products of two
+variable-containing expressions are rejected.
+
+The menu offers transformations from seven rule families:
+
+| Rule | Offered transformation |
+|---|---|
+| 1 | Simplify arithmetic and identities within a subtree. |
+| 2 | Distribute a numeric factor over a sum or difference. |
+| 3 | Expand and collect one side into `a*x + b`. |
+| 4 | Subtract a visible top-level term from both sides. |
+| 5 | Divide both sides by a visible nonzero numeric coefficient. |
+| 6 | Multiply both sides by the LCM of numeric denominators, then collect to clear fractions. |
+| 7 | Swap the two sides. |
+
+This is a declared vocabulary, **not every possible algebraic transformation**.
+Every offered move is checked against the original exact solution set, and its
+displayed expression is parsed back to verify the syntax tree. Move positions
+identify syntax-tree locations rather than MIU character offsets.
+
+The default guided example shows the shape of a derivation:
+
+```text
+2 * (x + 3) = 14
+x + 3 = 7          divide both sides by 2
+x = 4              subtract 3 from both sides
+```
+
+Distribution is also offered as a valid alternative, so the model chooses
+between different derivations of the same solution.
+
+The goal is fixed and server-owned: isolate `x` on the left with a rational
+number on the right, or reduce an identity/contradiction to a numeric
+equality. For example, `x - x = 0` can become `0 = 0` (all rational values),
+and `x - x = 1` can become `0 = 1` (no solution). These are successful
+classifications, not failed searches; MIU's modulo-three test does not apply.
+
+Guidance prefers in-budget, solved, and unvisited results when available,
+then scores `-10 * structural_cost + 5 * group_probability`. Structural cost
+is syntax-node count, plus six per right-side `x`, four for a nonzero left
+constant, and three for a left `x` coefficient other than one; solved states
+cost zero. This strongly heuristic policy may override the model. **Model
+only** preserves the raw provider choice; neither policy is guaranteed to find
+a short derivation before a safety budget stops it.
+
+Representation limits are 512 characters (including normalized output), 128
+syntax nodes, expression depth below 24, and 128-bit numerators and
+denominators, including computed coefficients and solutions. Oversized
+inputs are rejected. Generated transformations exceeding these bounds are
+omitted and counted in the UI; this is a representation restriction, not
+mathematical invalidity. The separate model-move length budget still defaults
+to 64 characters.
+
+The deterministic engine already knows how to classify linear equations. The
+experiment is about choosing inspectable intermediate steps, not a claim that
+AI is needed to solve them.
+
+## MIU × Jev
+
+MIU can stand as it is, and the sections below retain its full treatment. An
+honest admission comes with it: MIU is a bit too simple to benefit much from
+this approach. The engine already enumerates every legal rewrite, and the
+modulo-three invariant settles the interesting question without any search,
+so the strategic work left for a decision model is modest. MIU is retained as
+inspiration because of its place in AI lore: it is where this project began,
+and its origin in Hofstadter's *Gödel, Escher, Bach* makes it a compact,
+familiar stage for constrained machine choice.
 
 ## Provenance: *Gödel, Escher, Bach*
 
@@ -443,7 +529,7 @@ then `result.answers.nextMove.choice` is constrained to
 action or an arbitrary sentence. The schema becomes the boundary between
 probabilistic judgment and ordinary application code.
 
-That was the conceptual beginning of MIU × Jev. The MIU engine already has a
+That was the conceptual beginning of this project. The MIU engine already has a
 perfectly defined, finite action schema at every step: the complete set of
 legal rewrites. A typed decision model can therefore choose among those
 actions without being entrusted with constructing them. It is a particularly
@@ -463,7 +549,7 @@ The names are related but not interchangeable:
 | **Nimble** | [Bespoke Labs' open decision model][nimble], trained for the same broad class of schema-bound judgments. |
 | **Ollama 0.35.0+ System One** | The local API used here to run `nimble:latest` and obtain typed choices and probabilities. |
 
-MIU × Jev defaults to **Nimble locally through Ollama 0.35.0+**, making the
+Formalism × Jev defaults to **Nimble locally through Ollama 0.35.0+**, making the
 experiment self-contained and keeping every derivation on the user's machine.
 It can also
 call the hosted TypeSafe Jev service when the user deliberately selects that
@@ -526,71 +612,18 @@ remains eligible.
 
 ### Algebra example
 
-Select **Algebra · solve a linear equation**. The default guided example is:
-
-```text
-2 * (x + 3) = 14
-x + 3 = 7          divide both sides by 2
-x = 4              subtract 3 from both sides
-```
-
-Distribution is also offered as a valid alternative, so the model can choose
-between different derivations. Use the same local Nimble or hosted Jev
-settings as for MIU; no second model setup is needed. Manual moves work
+Select **Algebra · solve a linear equation**. The system, its rule families,
+guidance, and representation limits are described in
+[Algebra × Jev](#algebra--jev). Use the same local Nimble or hosted Jev
+settings as for MIU; no second model setup is needed, and manual moves work
 without either provider.
 
-Try `3x + 2 = x + 10`, `x/2 + 1 = 3`, `-2(x - 3) = 8`, or
-`(1/2)x + 1/3 = 5/6`. The engine uses exact rational arithmetic, not floating
-point or `eval`. Numeric-only arithmetic is normalized on load and during
-rewrites; the log retains the entered and normalized starting equations.
-Variable rearrangements remain explicit steps.
-
-The supported language has one variable, `x`, integers, fractions, ASCII
-`+ - * /`, parentheses, and implicit multiplication such as `2x` or `2(x+3)`.
-Multiplication and division have equal precedence and associate left to right;
-use parentheses to group a denominator. Decimals, powers, functions, other
-variables, variable denominators, and products of two variable-containing
-expressions are rejected.
-
-| Rule | Offered transformation |
-|---|---|
-| 1 | Simplify arithmetic and identities within a subtree. |
-| 2 | Distribute a numeric factor over a sum or difference. |
-| 3 | Expand and collect one side into `a*x + b`. |
-| 4 | Subtract a visible top-level term from both sides. |
-| 5 | Divide both sides by a visible nonzero numeric coefficient. |
-| 6 | Multiply both sides by the LCM of numeric denominators, then collect to clear fractions. |
-| 7 | Swap the two sides. |
-
-This is **not every possible algebraic transformation**. Every offered move is
-checked against the original exact solution set and its displayed expression
-is parsed back to verify the syntax tree. Move positions identify syntax-tree
-locations, rather than MIU character offsets.
-
-The goal is fixed: isolate `x` on the left with a rational number on the right,
-or reduce an identity/contradiction to a numeric equality. For example,
-`x - x = 0` can become `0 = 0` (all rational values), and `x - x = 1` can become
-`0 = 1` (no solution). These are successful classifications, not failed searches.
-The server determines completion; MIU's modulo-three test does not apply.
-
-Algebra guidance prefers in-budget, solved, and unvisited results when available,
-then scores `-10 * structural_cost + 5 * group_probability`. Structural cost is
-syntax-node count, plus six per right-side `x`, four for a nonzero left constant,
-and three for a left `x` coefficient other than one; solved states cost zero.
-This strongly heuristic policy may override the model. **Model only** preserves
-the raw provider choice; neither policy is guaranteed to find a short derivation
-before a safety budget stops it.
-
-Representation limits are 512 characters (including normalized output), 128
-syntax nodes, expression depth below 24, and 128-bit numerators/denominators,
-including computed coefficients and solutions. Oversized inputs are rejected.
-Generated transformations exceeding these bounds are omitted and counted in
-the UI; this is a representation restriction, not mathematical invalidity.
-The separate model-move length budget still defaults to 64 characters.
-
-The deterministic engine already knows how to classify linear equations.
-The experiment is about choosing inspectable intermediate steps, not a claim
-that AI is needed to solve them.
+Enter a starting equation and use **Load equation**. Try `3x + 2 = x + 10`,
+`x/2 + 1 = 3`, `-2(x - 3) = 8`, or `(1/2)x + 1/3 = 5/6`. Numeric-only
+arithmetic is normalized on load and during rewrites; the log retains the
+entered and normalized starting equations. Variable rearrangements remain
+explicit steps, and an invalid equation leaves the active derivation
+unchanged.
 
 ## Architecture
 
@@ -909,11 +942,11 @@ before treating one as a complete comparison.
 
 The checked-in [raw report](benchmark-results.json) contains 60 trials: four
 reachable targets at reference depths 3, 4, 5, and 6, plus separate `MU`
-exploration, repeated twice for each of six configurations. It is a historical
-MIU sample from commit `8dc77a8`, before the algebra example was added, not a
-measurement of the current expanded implementation. Recorded source hashes
-identify that Windows working tree (CRLF line endings), not Git's LF-normalized
-blobs. Reproduce its setup:
+exploration, repeated twice for each of six configurations. It was produced
+by the current implementation—the algebra-capable `app.py` checked in
+here—so its recorded source hashes match this repository. Recorded source
+hashes identify that Windows working tree (CRLF line endings), not Git's
+LF-normalized blobs. Reproduce its setup:
 
 ```powershell
 python benchmark.py --providers ollama typesafe --targets 4 --repeats 2 --max-steps 10 --max-length 32 --stagnation-limit 4 --bfs-depth 7 --bfs-states 10000 --seed 20261002 --output comparison-results.json
@@ -923,27 +956,29 @@ Reachable-target results only (eight attempts per configuration):
 
 | Strategy | Successes | Mean applied steps, all attempts | Mean latency per attempt | Provider calls, total | Group override rate |
 |---|---:|---:|---:|---:|---:|
-| Seeded random | 0/8 | 4.00 | 0.21 ms | 0 | n/a |
-| Heuristic only | 2/8 | 5.25 | 0.42 ms | 0 | n/a |
-| Nimble model-only | 2/8 | 5.00 | 542 ms | 28 | 0% |
-| Nimble guided | 2/8 | 5.25 | 663 ms | 36 | 38.9% |
-| Jev model-only | 3/8 | 5.50 | 1,535 ms | 38 | 0% |
-| Jev guided | 2/8 | 5.25 | 1,361 ms | 36 | 50.0% |
+| Seeded random | 0/8 | 4.00 | 0.11 ms | 0 | n/a |
+| Heuristic only | 2/8 | 5.25 | 0.15 ms | 0 | n/a |
+| Nimble model-only | 2/8 | 5.00 | 643 ms | 28 | 0% |
+| Nimble guided | 2/8 | 5.25 | 767 ms | 36 | 38.9% |
+| Jev model-only | 4/8 | 5.25 | 1,275 ms | 36 | 0% |
+| Jev guided | 2/8 | 5.25 | 1,292 ms | 36 | 50.0% |
 
-Heuristic-only and guided policies solved `MUI`; model-only policies instead
-solved `MIIIIIIIIU`, and Jev model-only also solved `MIUUIIIIU` in one of its
-two attempts. None solved `MIIIIIUIIIIUI` under these budgets. Every successful
-path matched its bounded-BFS reference length.
-All twelve separate `MU` trials stopped on stagnation; their inability to reach
-`MU` is explained by the invariant, not a model-quality score.
+Heuristic-only and both guided policies solved `MUI`. Nimble model-only
+solved `MIIIIIIIIU` in both attempts; Jev model-only solved `MIIIIIIIIU` and
+`MIUUIIIIU` once each. None solved `MIIIIIUIIIIUI` under these budgets. Every
+successful path matched its bounded-BFS reference length. All twelve separate
+`MU` trials stopped on stagnation; their inability to reach `MU` is explained
+by the invariant, not a model-quality score.
 
-**This sample shows no success-rate improvement from adding a model to the
-heuristic policy, while adding latency and provider calls.** Jev model-only
-had one additional success, but that is not enough to establish an advantage.
-Different raw choices were often overridden. This is a small, exploratory sample with only
-two repetitions, changing model aliases, and machine/network-dependent timings:
-it is not evidence of statistical superiority or equivalence. Broader target
-sets and repeated measurements are necessary before making stronger claims.
+**This sample does not show a success-rate improvement from adding a model to
+the heuristic policy**: both guided configurations matched the heuristic
+baseline while adding latency and provider calls. Jev model-only reached 4/8
+against the heuristic baseline's 2/8, but two repetitions per configuration
+cannot establish an advantage. Different raw choices were often overridden.
+This is a small, exploratory sample with only two repetitions, changing model
+aliases, and machine/network-dependent timings: it is not evidence of
+statistical superiority or equivalence. Broader target sets and repeated
+measurements are necessary before making stronger claims.
 
 ## Scope
 
