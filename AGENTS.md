@@ -169,6 +169,8 @@ from TypeSafe to Ollama 0.35.0+ or vice versa.
 
 - Provider availability comes from `/api/health`.
 - Selecting a provider updates its default model.
+- Keep the header status indicator synchronized with the selected provider and
+  editable model value.
 - Disable TypeSafe in the selector when the server has no key.
 - The UI is intentionally framework-free. Do not introduce a build tool for a
   small change.
