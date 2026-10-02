@@ -28,7 +28,46 @@
       </header>
 
       <main>
-        <section class="stage panel">
+        <section class="landing panel" id="landing">
+          <p class="eyebrow">CHOOSE A FORMALISM</p>
+          <h2 class="landing-head">Formalism × Jev</h2>
+          <p class="landing-lead">
+            A formal engine generates every legal move. A decision model
+            evaluates the menu. Deterministic code executes the choice and
+            records every step. The formal system determines what is legal;
+            the selected policy determines how model advice is used.
+          </p>
+          <div class="landing-cards">
+            <button class="landing-card primary" id="launchAlgebra">
+              <span class="landing-kicker">MAIN FEATURE</span>
+              <span class="landing-title">Algebra × Jev</span>
+              <ul>
+                <li>Solve single-variable linear equations over the rational numbers with exact Fraction arithmetic — never eval or floating point.</li>
+                <li>A declared vocabulary of seven rule families; every offered move is verified to preserve the exact solution set.</li>
+                <li>Server-owned goals: isolate x with a rational number on the right, or reduce identities and contradictions to numeric equalities.</li>
+                <li>The deterministic engine could solve these alone; the experiment is inspectable, model-guided intermediate steps.</li>
+              </ul>
+              <span class="landing-cta">Solve equations</span>
+            </button>
+            <button class="landing-card" id="launchMiu">
+              <span class="landing-kicker">HISTORICAL INSPIRATION</span>
+              <span class="landing-title">MIU × Jev</span>
+              <ul>
+                <li>Hofstadter's MU puzzle from Gödel, Escher, Bach (1979): four typographical rules, one axiom, and the question — can MI become MU?</li>
+                <li>A modulo-three invariant proves MU unreachable from MI without any search at all.</li>
+                <li>A bit too simple to really benefit from this approach — retained for its place in AI lore and as this project's origin.</li>
+              </ul>
+              <span class="landing-cta">See the inspiration</span>
+            </button>
+          </div>
+          <p class="journal-help landing-note">
+            Both applications share the same decision provider, controls, and
+            decision log. Switch between them at any time from the Example menu.
+          </p>
+          <p class="error hidden" id="landingNotice" role="status"></p>
+        </section>
+
+        <section class="stage panel" id="appStage">
           <div class="example-picker">
             <label for="example">EXAMPLE</label>
             <select id="example">
@@ -76,7 +115,7 @@
           <div class="error hidden" id="errorBox"></div>
         </section>
 
-        <section class="workspace">
+        <section class="workspace" id="appWorkspace">
           <div class="panel moves-panel">
             <div class="panel-heading">
               <div>
@@ -99,7 +138,7 @@
           </aside>
         </section>
 
-        <section class="panel journal-panel">
+        <section class="panel journal-panel" id="appJournal">
           <div class="panel-heading">
             <h2>Decision log</h2>
             <div>
@@ -117,7 +156,7 @@
           <div id="decisionJournal"></div>
         </section>
 
-        <details class="settings panel">
+        <details class="settings panel" id="appSettings">
           <summary>Settings & rules</summary>
           <div class="settings-grid">
             <label>

@@ -208,6 +208,11 @@ from TypeSafe to Ollama 0.35.0+ or vice versa.
 
 ## Frontend gotchas
 
+- The app opens on a landing page offering Algebra × Jev (the main feature) and
+  MIU × Jev (the historical inspiration). Launching uses the same loadExample
+  path as the example selector; the launch buttons and example switching stay
+  disabled while a launch or decision is pending, and the app views stay
+  hidden until a launch succeeds.
 - The example selector starts a new derivation while retaining provider/model
   settings and the shared journal. Validate a new equation before replacing
   the active state. Algebra reset uses the loaded initial equation.

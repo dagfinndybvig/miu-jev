@@ -17,6 +17,7 @@ const state = {
   events: [],
   nextEventId: 1,
   storageAvailable: true,
+  launched: false,
 };
 const SERVER_MAX_LENGTH = 8192;
 const JOURNAL_KEY = "miu-decision-journal-v1";
@@ -65,8 +66,18 @@ const elements = {
   equation: $("equation"),
   loadEquation: $("loadEquation"),
   exploreSetting: $("exploreSetting"),
+  landing: $("landing"),
+  launchAlgebra: $("launchAlgebra"),
+  launchMiu: $("launchMiu"),
+  landingNotice: $("landingNotice"),
+  appStage: $("appStage"),
+  appWorkspace: $("appWorkspace"),
+  appJournal: $("appJournal"),
+  appSettings: $("appSettings"),
   rules: $("rules"),
 };
+
+const APP_VIEWS = [elements.appStage, elements.appWorkspace, elements.appJournal, elements.appSettings];
 
 function goalValue() {
   return state.system === "algebra" ? EXAMPLES.algebra.goal : elements.goal.value.trim().toUpperCase();
@@ -331,6 +342,8 @@ function setBusy(busy) {
   const unavailable = !state.providers[elements.provider.value]?.available;
   const solvedAlgebra = state.system === "algebra" && goalReached();
   elements.jevStep.disabled = busy || state.auto || unavailable || solvedAlgebra || state.moves.length === 0;
+  elements.launchAlgebra.disabled = busy || state.auto;
+  elements.launchMiu.disabled = busy || state.auto;
   elements.autoRun.disabled = !state.auto && (busy || unavailable || solvedAlgebra || state.moves.length === 0);
   elements.undo.disabled = busy || state.auto || state.history.length <= 1;
   elements.reset.disabled = busy;
@@ -353,8 +366,10 @@ function setBusy(busy) {
 
 function render() {
   const algebraMode = state.system === "algebra";
+  elements.landing.classList.toggle("hidden", state.launched);
+  for (const view of APP_VIEWS) view.classList.toggle("hidden", !state.launched);
   elements.example.value = state.system;
-  elements.exampleTitle.textContent = EXAMPLES[state.system].title;
+  elements.exampleTitle.textContent = state.launched ? EXAMPLES[state.system].title : "Formalism";
   elements.currentLabel.textContent = algebraMode ? "CURRENT EQUATION" : "CURRENT STRING";
   elements.metricLabel.textContent = algebraMode ? "PROGRESS COST" : "#I MOD 3";
   elements.equationEditor.classList.toggle("hidden", !algebraMode);
@@ -741,6 +756,24 @@ async function autoRun() {
   render();
 }
 
+async function launchApp(system) {
+  if (state.busy || state.auto || !Object.hasOwn(EXAMPLES, system)) return;
+  setError();
+  elements.landingNotice.textContent = "";
+  elements.landingNotice.classList.add("hidden");
+  const loaded = await loadExample(system);
+  if (loaded) {
+    state.launched = true;
+  } else {
+    elements.landingNotice.textContent =
+      elements.error.textContent || "The selected example could not be loaded.";
+    elements.landingNotice.classList.remove("hidden");
+  }
+  render();
+}
+
+elements.launchAlgebra.addEventListener("click", () => launchApp("algebra"));
+elements.launchMiu.addEventListener("click", () => launchApp("miu"));
 elements.jevStep.addEventListener("click", () => jevStep());
 elements.autoRun.addEventListener("click", autoRun);
 elements.undo.addEventListener("click", async () => {

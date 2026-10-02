@@ -166,6 +166,38 @@ async function createApp(healthProviders = providers, storage = new Map()) {
   };
 }
 
+test("landing page launches algebra as the main feature", async () => {
+  const app = await createApp();
+  assert.equal(app.state.launched, false);
+  assert.ok(!app.nodes.get("landing").classList.contains("hidden"));
+  assert.ok(app.nodes.get("appStage").classList.contains("hidden"));
+  assert.ok(app.nodes.get("appWorkspace").classList.contains("hidden"));
+  assert.ok(app.nodes.get("appJournal").classList.contains("hidden"));
+  assert.equal(app.nodes.get("exampleTitle").textContent, "Formalism");
+  app.nodes.get("launchAlgebra").click();
+  assert.equal(app.state.busy, true);
+  assert.equal(app.nodes.get("launchMiu").disabled, true);
+  await app.movesResponse();
+  assert.equal(app.state.launched, true);
+  assert.equal(app.state.system, "algebra");
+  assert.equal(app.state.current, "2 * (x + 3) = 14");
+  assert.ok(app.nodes.get("landing").classList.contains("hidden"));
+  assert.ok(!app.nodes.get("appStage").classList.contains("hidden"));
+  assert.equal(app.nodes.get("exampleTitle").textContent, "Algebra");
+});
+
+test("landing page launches MIU as the historical inspiration", async () => {
+  const app = await createApp();
+  app.nodes.get("launchMiu").click();
+  await app.movesResponse();
+  assert.equal(app.state.launched, true);
+  assert.equal(app.state.system, "miu");
+  assert.equal(app.state.current, "MI");
+  assert.ok(app.nodes.get("landing").classList.contains("hidden"));
+  assert.ok(!app.nodes.get("appJournal").classList.contains("hidden"));
+  assert.equal(app.nodes.get("exampleTitle").textContent, "MIU");
+});
+
 test("manual moves lock transitions and reject obsolete menu entries", async () => {
   const app = await createApp();
   const [append, duplicate] = app.nodes.get("moves").children;
