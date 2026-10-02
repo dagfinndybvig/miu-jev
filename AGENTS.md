@@ -261,6 +261,7 @@ Add or update tests when changing:
 
 - any MIU rule or occurrence-scanning behavior;
 - algebra parsing, rewrite equivalence, representation limits, or goal detection;
+- launching from, returning to, or resuming out of the landing page;
 - switching examples, loading equations, or cross-example journal behavior;
 - provider selection or limits;
 - guided or model-only selection policy;

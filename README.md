@@ -61,7 +61,9 @@ $env:TYPESAFE_API_KEY = "your-key"
 python app.py
 ```
 
-Open <http://127.0.0.1:8765>. Use **Settings & rules** to switch providers.
+Open <http://127.0.0.1:8765>. The app starts on its landing page: choose
+**Algebra × Jev** (the main feature) or **MIU × Jev** (the historical
+inspiration). Use **Settings & rules** to switch providers.
 The browser never receives either provider's credentials.
 Ollama remains selected even when it is unavailable and a TypeSafe key is
 configured. Hosted decisions require an explicit switch to TypeSafe; there is
@@ -715,8 +717,9 @@ probabilities. Filter explanations describe deterministic code, not an inferred
 explanation of the model's internal reasoning.
 
 The journal is saved in this browser's `localStorage` for the app's origin.
-It survives undo, reset, and page reload; the active derivation starts at `MI`
-after reload rather than resuming an interrupted run. Pending decisions are
+It survives undo, reset, and page reload. A reload returns to the landing
+page rather than resuming an interrupted run; launching an application
+starts a fresh derivation. Pending decisions are
 marked interrupted and unfinished runs receive a `page_interrupted` stop
 event. Use one active app tab per origin for this local journal. **Export JSON**
 saves a portable snapshot of the active
