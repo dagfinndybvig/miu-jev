@@ -12,6 +12,39 @@ symbolic boundaries:
 
 > The formal system determines what is possible. Jev determines what to try.
 
+## Quick start
+
+Clone the repository and enter it:
+
+```powershell
+git clone https://github.com/dagfinndybvig/miu-jev.git
+Set-Location miu-jev
+```
+
+Choose one decision provider:
+
+| Provider | Best for | Configuration | Data path |
+|---|---|---|---|
+| **Ollama + Nimble** | Private, offline-capable local exploration | Install `nimble:latest` in Ollama | Decision inputs remain local |
+| **TypeSafe + Jev** | Using the original hosted Jev model | Set `TYPESAFE_API_KEY` | Decision inputs are sent to TypeSafe |
+
+The default local path is:
+
+```powershell
+ollama pull nimble
+python app.py
+```
+
+For hosted Jev instead:
+
+```powershell
+$env:TYPESAFE_API_KEY = "your-key"
+python app.py
+```
+
+Open <http://127.0.0.1:8765>. Use **Settings & rules** to switch providers.
+The browser never receives either provider's credentials.
+
 ## Provenance: *Gödel, Escher, Bach*
 
 The MIU system comes from Douglas R. Hofstadter's 1979 book
@@ -164,14 +197,14 @@ in a few lines that the requested destination is unreachable.
 
 ## Why add Jev?
 
-Ollama's System One decision models, such as `nimble`, do not need to generate
-free-form text for this task. They can select one option from a typed set of
+System One decision models such as Jev and Nimble do not need to generate
+free-form text for this task. They select one option from a typed set of
 choices and return probabilities for the alternatives. That fits the MIU
 system naturally:
 
 1. The symbolic engine receives the current string.
 2. It enumerates **all and only** formally legal rule applications.
-3. It sends those moves to `nimble` as a choice question.
+3. It sends those moves to the selected provider as a choice question.
 4. The model selects the move it considers most promising.
 5. The engine applies the selected move and records the derivation.
 
@@ -207,8 +240,8 @@ Jev exposes three main decision primitives:
   distribution across all allowed keys;
 - **score** evaluates the state against an ordered rubric and returns a
   probability-weighted score; and
-- **boolean**—called `noul` in some compatible interfaces—returns the
-  probability that a stated condition is true.
+- **noul** returns the probability that a stated condition is true; some
+  integrations expose the same primitive as **boolean**.
 
 This style is especially natural in TypeScript. Through the official
 [`@typesafe-ai/sdk`][typesafe-sdk], or through
@@ -272,7 +305,7 @@ project that distinction is visible by design: the formal engine guarantees
 that every selected move is legal, while the derivation history reveals
 whether the model's strategy is useful.
 
-[jev]: https://jevapi.dev/
+[jev]: https://docs.typesafe.ai/
 [typesafe-sdk]: https://www.npmjs.com/package/@typesafe-ai/sdk
 [vercel-jev]: https://vercel.com/kb/guide/typesafe-jev-and-ai-sdk
 [nimble]: https://github.com/bespokelabsai/nimble
@@ -312,18 +345,36 @@ The Python server is stateless with respect to a run. The browser sends the
 current string and derivation history when requesting a decision. The server
 recomputes the legal moves rather than trusting a client-supplied menu.
 
+The provider boundary is also server-side:
+
+```text
+browser
+   │ current state + provider name
+   ▼
+Python MIU engine
+   │ enumerates and validates legal moves
+   ├──► Ollama /v1/systemone ──► local Nimble
+   └──► TypeSafe /v1/systemone ► hosted Jev
+```
+
+Both providers receive the same semantic state and choice descriptions. Their
+different option limits are handled by the server, so the browser and MIU rule
+engine do not need provider-specific logic.
+
 In the default mode, the model is called through Ollama's local
 [`POST /v1/systemone` decision endpoint][systemone]. No prompts, strings, or
 derivations leave the machine in that mode.
 
 When TypeSafe is selected, the server sends the current string, target, recent
 history, and legal move descriptions to
-`https://api.typesafe.ai/v1/systemone`. The API key is read only by the Python
+the hosted [`POST /v1/systemone` endpoint][typesafe-api]. The API key is read
+only by the Python
 server and is sent in the required Bearer authorization header. It is never
 returned by `/api/health`, included in browser JavaScript, or written to the
 derivation history.
 
 [systemone]: https://docs.ollama.com/api/systemone
+[typesafe-api]: https://docs.typesafe.ai/api
 
 ## Requirements
 
@@ -397,7 +448,8 @@ python -m unittest -v
 ```
 
 The tests cover all four rewrite rules, overlapping pattern positions, input
-validation, and selection across more than 26 legal moves.
+validation, required TypeSafe credential handling, Ollama's 26-choice
+tournament behavior, and TypeSafe's larger choice window.
 
 ## Scope
 
