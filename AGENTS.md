@@ -53,6 +53,8 @@ Preserve these properties in every change:
    path that bypasses validation.
 5. **Ollama remains the default.** TypeSafe is an optional secondary provider;
    the project must still work without an API key.
+6. **Safety budgets are not formal rules.** Auto-run may stop for length,
+   steps, or cycles, but the legal menu must still show every MIU rewrite.
 
 ## MIU rule gotchas
 
@@ -148,7 +150,11 @@ from TypeSafe to Ollama or vice versa.
 - The UI is intentionally framework-free. Do not introduce a build tool for a
   small change.
 - Auto-run must remain stoppable and must stop on an API error, no legal moves,
-  or reaching the target.
+  reaching the target, exhausting its step budget, selecting an over-limit
+  next string, or selecting an already visited state.
+- Auto-run safety limits apply before a move is committed. Manual selection
+  remains available for every legal move within the server's absolute
+  8,192-character input bound.
 - Keep manual selection, undo, reset, probabilities, and derivation history
   working for both providers.
 - Avoid putting secrets or provider authorization logic in `web/app.js`.

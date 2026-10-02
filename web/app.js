@@ -8,6 +8,7 @@ const state = {
   auto: false,
   providers: {},
 };
+const SERVER_MAX_LENGTH = 8192;
 
 const $ = (id) => document.getElementById(id);
 const elements = {
@@ -29,6 +30,9 @@ const elements = {
   error: $("errorBox"),
   status: $("engineStatus"),
   delay: $("delay"),
+  maxSteps: $("maxSteps"),
+  maxLength: $("maxLength"),
+  runNotice: $("runNotice"),
 };
 
 function validMiu(value) {
@@ -51,15 +55,22 @@ function setError(message = "") {
   elements.error.classList.toggle("hidden", !message);
 }
 
+function setRunNotice(message = "") {
+  elements.runNotice.textContent = message;
+  elements.runNotice.classList.toggle("hidden", !message);
+}
+
 function setBusy(busy) {
   state.busy = busy;
   elements.thinking.classList.toggle("hidden", !busy);
-  elements.jevStep.disabled = busy || state.moves.length === 0;
+  elements.jevStep.disabled = busy || state.auto || state.moves.length === 0;
   elements.undo.disabled = busy || state.history.length <= 1;
   elements.reset.disabled = busy;
   elements.goal.disabled = busy || state.auto;
   elements.model.disabled = busy || state.auto;
   elements.provider.disabled = busy || state.auto;
+  elements.maxSteps.disabled = busy || state.auto;
+  elements.maxLength.disabled = busy || state.auto;
 }
 
 function render() {
@@ -117,14 +128,21 @@ async function refreshMoves() {
 }
 
 async function applyMove(move, source = "Manual choice") {
+  if (move.result.length > SERVER_MAX_LENGTH) {
+    setError(
+      `That move would exceed the server limit of ${SERVER_MAX_LENGTH} characters.`,
+    );
+    return false;
+  }
   state.current = move.result;
   state.history.push({ value: move.result, label: `${move.label} · ${source}` });
   state.selectedId = move.id;
   render();
   await refreshMoves();
+  return true;
 }
 
-async function jevStep() {
+async function jevStep(autoMode = false) {
   if (state.busy || !state.moves.length) return false;
   const goal = elements.goal.value.trim().toUpperCase();
   if (!validMiu(goal)) {
@@ -149,9 +167,27 @@ async function jevStep() {
     );
     render();
     await new Promise((resolve) => setTimeout(resolve, state.auto ? 100 : 450));
+    if (autoMode && !state.auto) {
+      setRunNotice("Auto-run stopped.");
+      return false;
+    }
+    if (autoMode && payload.move.result.length > Number(elements.maxLength.value)) {
+      setRunNotice(
+        `Auto-run stopped before a move that would grow the string to ${payload.move.result.length} characters.`,
+      );
+      state.auto = false;
+      return false;
+    }
+    if (
+      autoMode &&
+      state.history.some((entry) => entry.value === payload.move.result)
+    ) {
+      setRunNotice("Auto-run stopped before revisiting an earlier string.");
+      state.auto = false;
+      return false;
+    }
     const source = payload.provider === "typesafe" ? "TypeSafe Jev" : "Local Nimble";
-    await applyMove(payload.move, source);
-    return true;
+    return await applyMove(payload.move, source);
   } catch (error) {
     setError(error.message);
     state.auto = false;
@@ -163,10 +199,32 @@ async function jevStep() {
 }
 
 async function autoRun() {
+  if (state.busy && !state.auto) return;
   state.auto = !state.auto;
+  if (!state.auto) {
+    render();
+    return;
+  }
+  setError();
+  setRunNotice();
+  const startingStep = state.history.length - 1;
+  const maxSteps = Math.max(
+    1,
+    Math.min(500, Number(elements.maxSteps.value) || 40),
+  );
+  const maxLength = Math.max(
+    8,
+    Math.min(SERVER_MAX_LENGTH, Number(elements.maxLength.value) || 256),
+  );
+  elements.maxSteps.value = maxSteps;
+  elements.maxLength.value = maxLength;
   render();
   while (state.auto && state.moves.length && state.current !== elements.goal.value.trim().toUpperCase()) {
-    const moved = await jevStep();
+    if (state.history.length - 1 - startingStep >= maxSteps) {
+      setRunNotice(`Auto-run stopped after its ${maxSteps}-step budget.`);
+      break;
+    }
+    const moved = await jevStep(true);
     if (!moved) break;
     await new Promise((resolve) => setTimeout(resolve, Number(elements.delay.value)));
   }
@@ -174,13 +232,14 @@ async function autoRun() {
   render();
 }
 
-elements.jevStep.addEventListener("click", jevStep);
+elements.jevStep.addEventListener("click", () => jevStep(false));
 elements.autoRun.addEventListener("click", autoRun);
 elements.undo.addEventListener("click", async () => {
   if (state.history.length <= 1 || state.busy) return;
   state.history.pop();
   state.current = state.history.at(-1).value;
   setError();
+  setRunNotice();
   await refreshMoves();
 });
 elements.reset.addEventListener("click", async () => {
@@ -188,6 +247,7 @@ elements.reset.addEventListener("click", async () => {
   state.current = "MI";
   state.history = [{ value: "MI", label: "Axiom" }];
   setError();
+  setRunNotice();
   await refreshMoves();
 });
 elements.goal.addEventListener("input", () => {

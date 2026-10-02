@@ -20,6 +20,7 @@ TYPESAFE_URL = "https://api.typesafe.ai/v1/systemone"
 DEFAULT_PROVIDER = "ollama"
 DEFAULT_MODELS = {"ollama": "nimble:latest", "typesafe": "jev-latest"}
 MAX_BODY_BYTES = 1_000_000
+MAX_MIU_LENGTH = 8_192
 CHOICE_KEYS = string.ascii_uppercase
 PROVIDER_CHOICE_LIMITS = {"ollama": len(CHOICE_KEYS), "typesafe": 255}
 
@@ -107,7 +108,17 @@ def legal_moves(value: str) -> list[dict[str, Any]]:
 def validate_miu(value: Any, field: str) -> str:
     if not isinstance(value, str) or not value or any(char not in "MIU" for char in value):
         raise ValueError(f"{field} must be a non-empty string containing only M, I, and U")
+    if len(value) > MAX_MIU_LENGTH:
+        raise ValueError(f"{field} must not exceed {MAX_MIU_LENGTH} characters")
     return value
+
+
+def rewrite_opportunities(value: str) -> int:
+    return (
+        int(value.endswith("I"))
+        + sum(value[index : index + 3] == "III" for index in range(len(value) - 2))
+        + sum(value[index : index + 2] == "UU" for index in range(len(value) - 1))
+    )
 
 
 def decision_request(
@@ -130,6 +141,8 @@ def decision_request(
         criteria[key] = (
             f"{move['label']}; result: {move['result']}; "
             f"length: {len(move['result'])}; "
+            f"length change: {len(move['result']) - len(current):+d}; "
+            f"immediate non-duplication rewrites: {rewrite_opportunities(move['result'])}; "
             f"already visited: {'yes' if move['result'] in history else 'no'}"
         )
 
@@ -143,6 +156,12 @@ def decision_request(
             "The number of I symbols modulo 3 cannot become 0 when starting from MI. "
             "Use this fact when relevant, but still choose one of the supplied legal moves."
         ),
+        "search_guidance": (
+            "String growth is not progress by itself. Repeated Rule 2 doubling can grow "
+            "exponentially forever, especially when the target is impossible. Prefer "
+            "contractions, novel states, and moves that create immediate III or UU "
+            "rewrites. Choose doubling only when it creates a concrete rewrite opportunity."
+        ),
     }
     request_body: dict[str, Any] = {
         "model": model,
@@ -153,8 +172,8 @@ def decision_request(
                 "instructions": (
                     "Select the legal move most promising for reaching the target. Prefer the "
                     "target immediately, then novel states that appear to make structural "
-                    "progress. Avoid previously visited states and uncontrolled growth unless "
-                    "growth creates a useful rewrite opportunity."
+                    "progress. Strongly avoid revisiting states or increasing length without "
+                    "creating an immediate III or UU rewrite opportunity."
                 ),
                 "criteria": criteria,
             }

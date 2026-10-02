@@ -1,7 +1,14 @@
 import unittest
 from unittest.mock import patch
 
-from app import choose_move, decision_request, legal_moves, validate_miu
+from app import (
+    MAX_MIU_LENGTH,
+    choose_move,
+    decision_request,
+    legal_moves,
+    rewrite_opportunities,
+    validate_miu,
+)
 
 
 class LegalMovesTests(unittest.TestCase):
@@ -38,6 +45,11 @@ class LegalMovesTests(unittest.TestCase):
             with self.subTest(invalid=invalid):
                 with self.assertRaises(ValueError):
                     validate_miu(invalid, "current")
+        with self.assertRaisesRegex(ValueError, "must not exceed"):
+            validate_miu("M" + ("I" * MAX_MIU_LENGTH), "current")
+
+    def test_rewrite_opportunity_count(self):
+        self.assertEqual(rewrite_opportunities("MIIIIUU"), 3)
 
 
 class SelectionTests(unittest.TestCase):

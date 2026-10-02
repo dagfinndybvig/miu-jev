@@ -316,6 +316,8 @@ The browser UI provides:
 
 - **Ask Jev for one move** to request one decision from the selected provider;
 - **Auto-run** to continue choosing until stopped, stuck, or at the target;
+- configurable auto-run step and string-length budgets;
+- automatic stopping before cycles or over-limit growth;
 - a provider switch between local Ollama/Nimble and hosted TypeSafe/Jev;
 - the complete menu of legal rewrites at every step;
 - manual selection of any legal move;
@@ -360,6 +362,21 @@ Python MIU engine
 Both providers receive the same semantic state and choice descriptions. Their
 different option limits are handled by the server, so the browser and MIU rule
 engine do not need provider-specific logic.
+
+### Runaway-search protection
+
+The default `MI → MU` target is formally impossible, so no move-selection
+strategy can make auto-run succeed. Rule 2 can also double a string
+exponentially. Auto-run therefore has three guardrails:
+
+- a step budget, defaulting to 40 moves;
+- a maximum next-string length, defaulting to 256 characters; and
+- cycle detection that stops before revisiting an earlier string.
+
+These are execution safeguards, not new MIU rules. The complete legal menu
+remains visible, and a person may still apply any legal move manually. The
+server additionally rejects MIU strings over 8,192 characters to bound request
+and rendering costs.
 
 In the default mode, the model is called through Ollama's local
 [`POST /v1/systemone` decision endpoint][systemone]. No prompts, strings, or
