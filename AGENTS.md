@@ -40,15 +40,17 @@ Python package dependencies and no frontend build step.
 ## File map
 
 ```text
-app.py          MIU rules, provider clients, HTTP API, static file server
+app.py          MIU rules, system routing, provider clients, HTTP API, static file server
 algebra.py      exact linear-equation parser, rewrite menu, and guidance
 lambda_calc.py exact lambda-term parser, beta redex menus, and guidance
 test_algebra.py exact equivalence, limits, policies, and shared-provider tests
 test_lambda_calc.py lambda substitution, menus, limits, and policy tests
 test_app.py     unit tests for rules, provider limits, and configuration
 test_web.js     browser-state regression tests using Node.js built-ins
-benchmark.py    controlled baseline/provider comparisons and bounded BFS
+benchmark.py    controlled baseline/provider comparisons and reference paths
 test_benchmark.py benchmark witness, budget, and metric tests
+benchmark-results.json measured MIU sample with per-trial evidence
+benchmark-results-lambda.json measured lambda hint-ablation sample
 web/index.html  page structure and settings
 web/styles.css  responsive presentation
 web/app.js      browser state, API calls, controls, and rendering
@@ -226,7 +228,8 @@ headers.
 
 - `GET /api/health` returns provider metadata safe for the browser.
 - `POST /api/moves` accepts `current` and returns server-generated legal moves.
-- `POST /api/choose` accepts `current`, `goal`, `provider`, `model`, and
+- `POST /api/choose` accepts `current`, `goal`, `provider`, `model`, `policy`
+  (defaulting to `model`), and
   `history`; it recomputes moves before asking the provider.
 - Both POST endpoints accept `system` (`miu` by default, `algebra`, or
   `lambda`).

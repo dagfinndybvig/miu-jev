@@ -113,7 +113,7 @@ Every offered move is checked against the original exact solution set, and its
 displayed expression is parsed back to verify the syntax tree. Move positions
 identify syntax-tree locations rather than MIU character offsets.
 
-The default guided example shows the shape of a derivation:
+The default example shows the shape of a derivation:
 
 ```text
 2 * (x + 3) = 14
@@ -745,7 +745,7 @@ by budgets. Manual moves work without either provider.
 The project intentionally has no package dependencies or frontend build step.
 
 ```text
-app.py          HTTP server, MIU engine, validation, provider clients
+app.py          HTTP server, MIU engine, system routing, validation, provider clients
 algebra.py      exact linear-equation parser, rewrites, and guidance
 lambda_calc.py exact lambda-term parser, beta redex menus, and guidance
 web/
@@ -800,12 +800,12 @@ For example, `/api/moves` accepts:
 
 It returns normalized `current`, `moves`, `solved`, `progress`, `solution_kind`,
 `omitted_for_limits`, `rules`, and `limits`. `/api/choose` uses the same
-`provider`, `model`, `policy`, `history`, and `max_length` fields as MIU.
+`provider`, `model`, `policy` (defaulting to `model`), `history`, and `max_length` fields as MIU.
 The algebra `goal` must be `"Isolate x"` or omitted. Its `max_length` range
 is 8–512. The lambda `goal` must be `"Normal form"` or omitted, with the
 same 8–512 range; its analysis adds `redexes` counts and per-move duplication
 costs. Decision responses include `system` and an `analysis` object describing
-the input equation. Each algebra move also reports its result's `solved` and
+the input equation or term. Each algebra move also reports its result's `solved` and
 `progress` values. `/api/health` remains shared provider metadata.
 
 ### Decision records and local persistence
@@ -884,7 +884,7 @@ the exploratory override when they want impossible targets rejected outright.
 ### MIU guided selection heuristics
 
 Prompting alone does not reliably teach a decision model how to control an
-open-ended symbolic search. The default **Guided · heuristics + model ranking** policy
+open-ended symbolic search. The **Guided · heuristics + model ranking** policy
 therefore combines the provider's probability distribution with deterministic
 search heuristics:
 
@@ -898,10 +898,10 @@ search heuristics:
 
 The provider still evaluates the legal menu, and every applied move remains a
 formal MIU rewrite. The heuristic layer controls search strategy, not legality.
-For experiments with unmodified model behavior, select **Model only ·
-experimental** in **Settings & rules**.
+Unmodified model behavior is the default: **Model only · provider choice,
+safety limits** in **Settings & rules** preserves the provider's raw choice.
 
-In the default mode, the model is called through the local
+With Ollama selected, the model is called through the local
 [`POST /v1/systemone` decision endpoint][systemone] provided by Ollama 0.35.0
 or later. No prompts, strings, or derivations leave the machine in that mode.
 
@@ -991,7 +991,7 @@ python app.py --host 127.0.0.1 --port 9000
 
 ```powershell
 python -m unittest -v
-python -m py_compile app.py algebra.py test_app.py test_algebra.py benchmark.py test_benchmark.py
+python -m py_compile app.py algebra.py lambda_calc.py test_app.py test_algebra.py test_lambda_calc.py benchmark.py test_benchmark.py
 node --check web\app.js
 node --test test_web.js
 ```
