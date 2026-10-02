@@ -1,4 +1,4 @@
-<img width="1253" height="670" alt="image" src="https://github.com/user-attachments/assets/aadd6d09-1450-43f9-95a0-f46e7548ead8" />
+<img width="1253" height="670" alt="Formalism × Jev application screenshot" src="https://github.com/user-attachments/assets/aadd6d09-1450-43f9-95a0-f46e7548ead8" />
 
 # Formalism × Jev
 
