@@ -749,6 +749,7 @@ test_web.js     browser-state regression tests (Node.js built-ins)
 benchmark.py    controlled comparisons with bounded reference paths
 test_benchmark.py benchmark generation, safety, and measurement tests
 benchmark-results.json measured sample with per-trial evidence
+benchmark-results-lambda.json measured lambda hint-ablation sample
 ```
 
 The Python server is stateless with respect to a run. The browser sends the
@@ -1106,6 +1107,34 @@ This is a small, exploratory sample with only two repetitions, changing model
 aliases, and machine/network-dependent timings: it is not evidence of
 statistical superiority or equivalence. Broader target sets and repeated
 measurements are necessary before making stronger claims.
+
+### Measured lambda sample: 2 October 2026
+
+The checked-in [lambda ablation report](benchmark-results-lambda.json)
+contains 120 trials: five sampled cases (three Church-arithmetic terms, one
+trap, one growth term) plus Ω, repeated twice for each of ten strategies —
+random and heuristic baselines, and model/guided arms for both providers with
+and without hints. It was produced by the current implementation; recorded
+source hashes match this repository. Reproduce its setup:
+
+```powershell
+python benchmark.py --system lambda --providers ollama typesafe --hint-ablation --targets 5 --repeats 2 --max-steps 12 --output lambda-results.json
+```
+
+Every arm solved every reachable, trap, and growth case (100%), with mean
+steps matching the normal-order references (6.0 reachable, 2.0 trap, 4.0
+growth); all Ω trials stopped on cycle. **Hint ablation made no measurable
+difference**: identical success, steps, and raw-choice distributions with and
+without annotations, consistent with models reading the candidate results
+themselves rather than the computed hints. Guided arms occasionally overrode
+the model toward a cheaper inner contraction without changing step counts.
+
+Two caveats keep this honest: menus never exceeded three options, so
+tournaments are untested; and on these terms the winning redex is always the
+first menu entry, so first-option bias cannot be excluded from the report
+alone. A separate ad-hoc live probe that reversed the menu order — presenting
+the Ω redex first — had both models pick the trap-escaping contraction every
+time, but that probe is not part of this checked-in evidence.
 
 ## Scope
 
