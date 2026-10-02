@@ -746,7 +746,7 @@ test_app.py     rule-engine and selection tests
 test_algebra.py algebra equivalence, limits, policies, and provider tests
 test_lambda_calc.py lambda substitution, menus, limits, and policy tests
 test_web.js     browser-state regression tests (Node.js built-ins)
-benchmark.py    controlled comparisons and bounded BFS reference paths
+benchmark.py    controlled comparisons with bounded reference paths
 test_benchmark.py benchmark generation, safety, and measurement tests
 benchmark-results.json measured sample with per-trial evidence
 ```
@@ -1002,8 +1002,8 @@ Node.js is not required to run the app.
 
 ## Controlled strategy comparisons
 
-The benchmark runner is **MIU-specific**; its measurements do not evaluate
-algebra strategies.
+The benchmark runner defaults to **MIU**; its measurements do not evaluate
+algebra strategies. `--system lambda` selects a lambda pool instead.
 
 Run the random and heuristic-only baselines without any model calls:
 
@@ -1016,6 +1016,8 @@ To include both model-only and guided policies for a provider, opt in explicitly
 ```powershell
 python benchmark.py --providers ollama --output local-results.json
 python benchmark.py --providers ollama typesafe --output comparison-results.json
+python benchmark.py --system lambda --output lambda-baseline.json
+python benchmark.py --system lambda --providers ollama typesafe --hint-ablation --output lambda-results.json
 ```
 
 The TypeSafe command sends only generated MIU benchmark inputs to the hosted
@@ -1023,6 +1025,18 @@ service and requires a configured key. Provider failures are reported as failed
 trials, never replaced with a baseline or another provider. The runner performs
 real inference and may incur hosted usage charges. Default model aliases can be
 overridden with `--ollama-model` and `--typesafe-model`.
+
+The lambda mode samples a curated pool: Church-arithmetic terms with
+normal-order reference paths, strategy traps that only outer-first reduction
+escapes, duplication-heavy growth terms, and Ω as deliberate
+impossible-target exploration. Reference steps are normal-order paths, which
+reach a normal form whenever one exists. `--hint-ablation` adds model and
+guided arms whose provider menus carry **no precomputed annotations** — no
+solved flags, duplication costs, or search guidance — so raw model judgment
+can be compared directly against hint-assisted selection. When interpreting
+results, vary the menu order: leftmost-outermost is always the first menu
+entry, so a model that always picks the first option and a model following
+normal order are indistinguishable until the order changes.
 
 All strategies start at `MI` with the same step, length, cycle, and edit-distance
 stagnation limits. Random selects uniformly over legal applications; the
