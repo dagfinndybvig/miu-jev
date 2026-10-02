@@ -10,7 +10,7 @@ systems:
 **Algebra × Jev**, exact single-variable linear algebra over the rationals,
 **Lambda × Jev**, beta reduction of untyped lambda terms, and
 and **MIU × Jev**, Hofstadter's MU puzzle - the latter mostly included for historical inspiration, it is a bit too simple to really benefit. **Guided** mode uses heuristics with
-model-assisted ranking; **Model only** preserves the provider's choice,
+model-assisted ranking; **Model only** (the default) preserves the provider's choice,
 subject to execution limits. Local **Ollama 0.35.0 or later** with Nimble is
 the default; TypeSafe's hosted Jev API is an optional secondary provider. In
 either mode, the selected policy determines *which* legal path to follow, but
@@ -485,7 +485,7 @@ chosen = apply_policy(decision, legal, history)
 current = apply(chosen)
 ```
 
-The default guided policy applies the following priorities:
+The guided policy applies the following priorities:
 
 1. choose the target immediately if it is a legal successor;
 2. if a shortening move exists, choose among shortening moves;
@@ -680,7 +680,8 @@ The browser UI provides:
 - a header indicator that tracks the selected provider, model, and reported
   availability, including local-provider errors;
 - a provider switch between local Ollama 0.35.0+/Nimble and hosted TypeSafe/Jev;
-- domain-specific **guided** policies and a **model only** comparison mode;
+- a default **model only** policy with domain-specific **guided** policies
+  one click away;
 - the generated menu of legal rewrites at every step;
 - manual selection of any legal move;
 - decision probabilities when available;

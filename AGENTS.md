@@ -73,7 +73,7 @@ Preserve these properties in every change:
    provider; the project must still work without an API key.
 6. **Safety budgets are not formal rules.** Auto-run may stop for length,
    steps, or cycles, but the legal menu must still show every MIU rewrite.
-7. **Guidance is strategy, not legality.** The default guided policy may rank
+7. **Guidance is strategy, not legality.** The MIU guided policy may rank
    or prefer legal moves, but it must never synthesize a move outside the
    selected system's server-generated menu.
 
@@ -169,7 +169,8 @@ merge them into a global distribution. Explanations describe actual policy
 filters and scores, not inferred model reasoning. Singleton groups make no
 provider call and must not invent a model probability.
 
-The default MIU `guided` policy is intentionally reduction-first. If a group has
+The MIU `guided` policy is intentionally reduction-first. **Model only is the
+default selection policy**; the guided policy must remain available. If a group has
 any shortening moves, `select_move` must choose within that subset. Otherwise
 it combines provider probabilities with novelty, contraction-opportunity, and
 growth heuristics. It must also avoid a growth-only trap when a productive

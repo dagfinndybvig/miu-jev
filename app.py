@@ -725,7 +725,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                 if not isinstance(provider, str) or provider not in DEFAULT_MODELS:
                     raise ValueError("provider must be ollama or typesafe")
                 model = payload.get("model", DEFAULT_MODELS[provider])
-                policy = payload.get("policy", "guided")
+                policy = payload.get("policy", "model")
                 if policy not in ("guided", "model"):
                     raise ValueError("policy must be guided or model")
                 history = payload.get("history", [])

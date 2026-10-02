@@ -430,6 +430,23 @@ class HttpApiTests(unittest.TestCase):
         self.assertEqual(payload["move"]["result"], "MII")
         self.assertEqual(payload["moves"], legal_moves("MI"))
 
+    def test_choose_defaults_to_the_model_only_policy(self):
+        response = io.BytesIO(json.dumps({"answers": {"next_move": {
+            "choice": "A", "probabilities": {"A": 1, "B": 0},
+        }}}).encode())
+        with (
+            patch("app.require_compatible_ollama"),
+            patch("app.urllib.request.urlopen", return_value=response),
+        ):
+            status, payload = self.request("POST", "/api/choose", {
+                "current": "MI", "goal": "MII",
+                "moves": [{"id": "move-0", "result": "MII"}],
+            })
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["policy"], "model")
+        self.assertEqual(payload["override_count"], 0)
+        self.assertEqual(payload["move"]["result"], "MIU")
+
     def test_algebra_moves_normalize_and_report_goal_state(self):
         status, payload = self.request("POST", "/api/moves", {
             "system": "algebra", "current": "2(x+3)=14",
