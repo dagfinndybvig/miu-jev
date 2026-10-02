@@ -334,6 +334,7 @@ def decision_request(
     candidates: list[dict[str, Any]],
     max_length: int,
     trace: dict[str, Any] | None = None,
+    hints: bool = True,
     system: str = "miu",
 ) -> tuple[dict[str, Any], dict[str, float]]:
     validate_system(system)
@@ -346,6 +347,9 @@ def decision_request(
     )
     for key, move in zip(keys, candidates):
         by_key[key] = move
+        if not hints:
+            criteria[key] = f"{move['label']}; result: {move['result']}"
+            continue
         domain_detail = (
             f"immediate non-duplication rewrites: {rewrite_opportunities(move['result'])}; "
             f"growth-only trap: {'yes' if is_growth_only_trap(move['result']) else 'no'}; "
@@ -430,6 +434,24 @@ def decision_request(
         instructions = (
             "Choose the supplied beta contraction that most directly progresses "
             "toward the normal-form goal. Do not invent a term or a transformation."
+        )
+    if not hints:
+        current_key = {"miu": "current_string", "algebra": "current_equation", "lambda": "current_term"}[system]
+        state = {
+            "formal_system": "A formal rewrite system",
+            current_key: current,
+            "goal": goal,
+            "recent_derivation": history[-12:],
+            "candidate_moves": criteria,
+            "invariant": (
+                "Every candidate is a legal move; no further annotations are "
+                "provided in this condition."
+            ),
+            "search_guidance": "Judge the candidates from the state itself.",
+        }
+        instructions = (
+            "Select the candidate move you judge best for reaching the goal. "
+            "Do not invent a move or a transformation."
         )
     request_body: dict[str, Any] = {
         "model": model,
@@ -548,6 +570,7 @@ def choose_move(
     history: list[str],
     moves: list[dict[str, Any]],
     max_length: int = 64,
+    hints: bool = True,
     system: str = "miu",
 ) -> dict[str, Any]:
     validate_system(system)
@@ -597,7 +620,7 @@ def choose_move(
                 try:
                     winner, probabilities = decision_request(
                         provider, model, policy, current, goal, history,
-                        group, max_length, trace=group_trace, system=system,
+                        group, max_length, trace=group_trace, system=system, hints=hints,
                     )
                 except RuntimeError as error:
                     group_trace["error"] = str(error)
@@ -736,7 +759,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                     history,
                     moves,
                     max_length,
-                    system,
+                    system=system,
                 )
                 if analysis is not None:
                     result["analysis"] = {

@@ -286,6 +286,20 @@ def describe(value: str) -> dict[str, Any]:
     }
 
 
+def normal_order_witness(value: str, max_steps: int = 100) -> tuple[list[dict[str, Any]], str | None]:
+    """Leftmost-outermost reduction. The menu is built in pre-order, so its
+    first entry is always the leftmost-outermost redex; normal order therefore
+    takes move 0 repeatedly. Returns the applied path and the normal form
+    (None if the budget ran out, meaning the term may not normalize)."""
+    path: list[dict[str, Any]] = []
+    state = describe(value)
+    while not state["solved"] and len(path) < max_steps:
+        move = state["moves"][0]
+        path.append({"current": state["current"], "move": move})
+        state = describe(move["result"])
+    return path, (state["current"] if state["solved"] else None)
+
+
 def select_move(
     policy: str, current: str, goal: str, history: list[str],
     candidates: list[dict[str, Any]], model_choice: dict[str, Any],

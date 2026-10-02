@@ -133,7 +133,7 @@ class SelectionTests(unittest.TestCase):
             for index in range(30)
         ]
         decide.side_effect = (
-            lambda provider, model, policy, current, goal, history, candidates, max_length, trace=None, system="miu": (
+            lambda provider, model, policy, current, goal, history, candidates, max_length, trace=None, system="miu", hints=True: (
                 candidates[-1],
                 {
                     candidate["id"]: 1 / len(candidates)
@@ -245,6 +245,45 @@ class ProviderResponseTests(unittest.TestCase):
                 provider, "test-model", "model", "MI", "MU", ["MI"],
                 legal_moves("MI"), 64,
             )
+
+    def test_hint_ablation_strips_annotations_from_provider_state(self):
+        captured = {}
+        response = io.BytesIO(json.dumps({"answers": {"next_move": {
+            "choice": "A", "probabilities": {"A": 1},
+        }}}).encode())
+
+        def record(request, timeout=0):
+            captured["body"] = json.loads(request.data)
+            return io.BytesIO(json.dumps({"answers": {"next_move": {
+                "choice": "A", "probabilities": {"A": 1},
+            }}}).encode())
+
+        with (
+            patch("app.require_compatible_ollama"),
+            patch("app.urllib.request.urlopen", side_effect=record),
+        ):
+            decision_request("ollama", "nimble:latest", "guided", "MI", "MU", ["MI"],
+                             legal_moves("MI"), 64, hints=False)
+        state = captured["body"]["state"]
+        self.assertEqual(state["formal_system"], "A formal rewrite system")
+        self.assertIn("no further annotations", state["invariant"])
+        self.assertIn("Judge the candidates", state["search_guidance"])
+        self.assertTrue(all(
+            "length" not in text and "visited" not in text and "trap" not in text
+            for text in state["candidate_moves"].values()
+        ))
+
+        with (
+            patch("app.require_compatible_ollama"),
+            patch("app.urllib.request.urlopen", side_effect=record),
+        ):
+            decision_request("ollama", "nimble:latest", "guided", "MI", "MU", ["MI"],
+                             legal_moves("MI"), 64, hints=True)
+        state = captured["body"]["state"]
+        self.assertEqual(state["formal_system"], "MIU")
+        self.assertTrue(any(
+            "growth-only trap" in text for text in state["candidate_moves"].values()
+        ))
 
     def test_valid_probability_mapping_for_both_providers(self):
         for provider, keys in (
