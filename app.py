@@ -7,6 +7,7 @@ import mimetypes
 import os
 import re
 import string
+import time
 import urllib.error
 import urllib.request
 from http import HTTPStatus
@@ -225,9 +226,24 @@ def select_move(
     model_choice: dict[str, Any],
     probabilities: dict[str, float],
     max_length: int,
+    explanation: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    evidence: dict[str, Any] = {"filters": [], "scores": {}}
+    if explanation is not None:
+        explanation.update(evidence)
+
+    def record_filter(reason: str, pool: list[dict[str, Any]]) -> None:
+        evidence["filters"].append(
+            {"reason": reason, "eligible": [move["id"] for move in pool]}
+        )
+
+    def finish(move: dict[str, Any], reason: str) -> dict[str, Any]:
+        if explanation is not None:
+            explanation["reason"] = reason
+        return move
+
     if policy == "model":
-        return model_choice
+        return finish(model_choice, "Provider choice preserved; execution limits still apply.")
     if policy != "guided":
         raise ValueError("policy must be guided or model")
 
@@ -236,31 +252,49 @@ def select_move(
     ]
     if bounded:
         candidates = bounded
+        record_filter("Prefer moves within the length budget.", candidates)
 
     targets = [move for move in candidates if move["result"] == goal]
     if targets:
-        return targets[0]
+        record_filter("Prefer an immediate target.", targets)
+        return finish(targets[0], "Selected an immediate target.")
 
     reductions = [
         move for move in candidates if len(move["result"]) < len(current)
     ]
     pool = reductions or candidates
+    if reductions:
+        record_filter("Prefer shortening moves.", pool)
     novel = [move for move in pool if move["result"] not in history]
     if novel:
         pool = novel
+        record_filter("Prefer unvisited results.", pool)
     productive = [
         move for move in pool if not is_growth_only_trap(move["result"])
     ]
     if productive:
         pool = productive
+        record_filter("Avoid growth-only traps when an alternative exists.", pool)
 
-    return max(
+    for move in pool:
+        score = heuristic_score(move, current, goal, history)
+        adjustment = 5.0 * probabilities.get(move["id"], 0.0)
+        evidence["scores"][move["id"]] = {
+            "heuristic": score,
+            "probability_adjustment": adjustment,
+            "total": score + adjustment,
+        }
+    selected = max(
         pool,
         key=lambda move: (
-            heuristic_score(move, current, goal, history)
-            + 5.0 * probabilities.get(move["id"], 0.0),
+            evidence["scores"][move["id"]]["total"],
             probabilities.get(move["id"], 0.0),
         ),
+    )
+    return finish(
+        selected,
+        "Highest heuristic plus group-local probability score among retained moves; "
+        "ties use probability, then menu order.",
     )
 
 
@@ -273,6 +307,7 @@ def decision_request(
     history: list[str],
     candidates: list[dict[str, Any]],
     max_length: int,
+    trace: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], dict[str, float]]:
     criteria: dict[str, str] = {}
     by_key: dict[str, dict[str, Any]] = {}
@@ -356,14 +391,16 @@ def decision_request(
         with urllib.request.urlopen(request, timeout=120) as response:
             payload = json.load(response)
     except urllib.error.HTTPError as error:
-        detail = error.read().decode("utf-8", errors="replace")
+        error.close()
         raise RuntimeError(
-            f"{provider_name} returned HTTP {error.code}: {detail}"
+            f"{provider_name} returned HTTP {error.code}"
         ) from error
     except urllib.error.URLError as error:
         raise RuntimeError(f"Could not reach {provider_name}: {error.reason}") from error
     except (json.JSONDecodeError, UnicodeDecodeError) as error:
         raise RuntimeError(f"{provider_name} returned invalid JSON") from error
+    except TimeoutError as error:
+        raise RuntimeError(f"{provider_name} request timed out") from error
 
     answers = payload.get("answers") if isinstance(payload, dict) else None
     answer = answers.get("next_move") if isinstance(answers, dict) else None
@@ -390,6 +427,7 @@ def decision_request(
         if not math.isfinite(probability) or not 0 <= probability <= 1:
             raise RuntimeError(f"{provider_name} returned an invalid probability")
         probabilities[by_key[key]["id"]] = probability
+    selection: dict[str, Any] = {}
     selected = select_move(
         policy,
         current,
@@ -399,8 +437,21 @@ def decision_request(
         by_key[selected_key],
         probabilities,
         max_length,
+        selection,
     )
+    if trace is not None:
+        trace.update({
+            "raw_choice": by_key[selected_key]["id"],
+            "overridden": selected["id"] != by_key[selected_key]["id"],
+            "selection": selection,
+        })
     return selected, probabilities
+
+
+class DecisionError(RuntimeError):
+    def __init__(self, message: str, decision: dict[str, Any]) -> None:
+        super().__init__(message)
+        self.decision = decision
 
 
 def choose_move(
@@ -416,43 +467,68 @@ def choose_move(
     if not moves:
         raise ValueError("There are no legal moves from the current string")
 
+    started = time.perf_counter()
     rounds: list[dict[str, Any]] = []
+    result: dict[str, Any] = {
+        "schema_version": 1, "current": current, "goal": goal,
+        "provider": provider, "model": model, "policy": policy,
+        "history": list(history), "max_length": max_length, "moves": moves,
+        "rounds": rounds, "provider_calls": 0, "override_count": 0,
+    }
     contenders = moves
     round_number = 1
-    while len(contenders) > 1:
+    while True:
         winners: list[dict[str, Any]] = []
-        round_probabilities: dict[str, float] = {}
+        groups: list[dict[str, Any]] = []
+        round_trace = {
+            "round": round_number, "contenders": len(contenders),
+            "winners": 0, "groups": groups,
+        }
+        rounds.append(round_trace)
         choice_limit = PROVIDER_CHOICE_LIMITS[provider]
         for offset in range(0, len(contenders), choice_limit):
             group = contenders[offset : offset + choice_limit]
+            group_trace: dict[str, Any] = {
+                "group": len(groups) + 1,
+                "candidates": [move["id"] for move in group],
+                "requested": len(group) > 1,
+                "raw_choice": None, "winner": None, "overridden": False,
+                "probabilities": {},
+                "probability_scope": "within this group only",
+            }
+            groups.append(group_trace)
+            group_started = time.perf_counter()
             if len(group) == 1:
                 winner = group[0]
-                probabilities = {winner["id"]: 1.0}
+                probabilities = {}
+                group_trace["selection"] = {
+                    "reason": "Only candidate; advanced without a provider request.",
+                    "filters": [], "scores": {},
+                }
             else:
-                winner, probabilities = decision_request(
-                    provider,
-                    model,
-                    policy,
-                    current,
-                    goal,
-                    history,
-                    group,
-                    max_length,
-                )
+                result["provider_calls"] += 1
+                try:
+                    winner, probabilities = decision_request(
+                        provider, model, policy, current, goal, history,
+                        group, max_length, trace=group_trace,
+                    )
+                except RuntimeError as error:
+                    group_trace["error"] = str(error)
+                    group_trace["elapsed_ms"] = (time.perf_counter() - group_started) * 1000
+                    result["elapsed_ms"] = (time.perf_counter() - started) * 1000
+                    raise DecisionError(str(error), result) from error
             winners.append(winner)
-            round_probabilities.update(probabilities)
-        rounds.append(
-            {
-                "round": round_number,
-                "contenders": len(contenders),
-                "winners": len(winners),
-                "probabilities": round_probabilities,
-            }
-        )
+            round_trace["winners"] = len(winners)
+            group_trace["winner"] = winner["id"]
+            group_trace["probabilities"] = probabilities
+            group_trace["elapsed_ms"] = (time.perf_counter() - group_started) * 1000
+            result["override_count"] += int(group_trace["overridden"])
+        if len(winners) == 1:
+            result["move"] = winners[0]
+            result["elapsed_ms"] = (time.perf_counter() - started) * 1000
+            return result
         contenders = winners
         round_number += 1
-
-    return {"move": contenders[0], "rounds": rounds}
 
 
 class RequestHandler(BaseHTTPRequestHandler):
@@ -552,6 +628,11 @@ class RequestHandler(BaseHTTPRequestHandler):
             self.send_error(HTTPStatus.NOT_FOUND)
         except ValueError as error:
             self.send_json({"error": str(error)}, HTTPStatus.BAD_REQUEST)
+        except DecisionError as error:
+            self.send_json(
+                {"error": str(error), "decision": error.decision},
+                HTTPStatus.BAD_GATEWAY,
+            )
         except RuntimeError as error:
             self.send_json({"error": str(error)}, HTTPStatus.BAD_GATEWAY)
         except Exception as error:

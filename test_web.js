@@ -51,11 +51,22 @@ function element() {
   };
 }
 
-async function createApp(healthProviders = providers) {
+async function createApp(healthProviders = providers, storage = new Map()) {
   const nodes = new Map();
   const requests = [];
   const timers = [];
+  const downloads = [];
   const context = vm.createContext({
+    localStorage: {
+      getItem(key) { return storage.get(key) ?? null; },
+      setItem(key, value) { storage.set(key, value); },
+      removeItem(key) { storage.delete(key); },
+    },
+    Blob,
+    URL: {
+      createObjectURL(blob) { downloads.push(blob); return "blob:test"; },
+      revokeObjectURL() {},
+    },
     document: {
       getElementById(id) {
         if (!nodes.has(id)) nodes.set(id, element());
@@ -67,7 +78,7 @@ async function createApp(healthProviders = providers) {
       return new Promise((resolve, reject) => {
         requests.push({
           url, body: options ? JSON.parse(options.body) : null, reject,
-          respond(payload) { resolve({ ok: true, json: async () => payload }); },
+          respond(payload, ok = true) { resolve({ ok, json: async () => payload }); },
         });
       });
     },
@@ -88,7 +99,7 @@ async function createApp(healthProviders = providers) {
   requests.shift().respond({ moves: legalMenu("MI") });
   await settle();
   return {
-    nodes, requests, timers, run,
+    nodes, requests, timers, run, storage, downloads,
     get state() { return run("state"); },
     async movesResponse() {
       const request = requests.shift();
@@ -108,7 +119,12 @@ async function createApp(healthProviders = providers) {
       const moves = legalMenu(request.body.current);
       request.respond({
         moves, move: moves[index], provider: request.body.provider,
-        policy: request.body.policy, rounds: [{ probabilities: { [moves[index].id]: 1 } }],
+        policy: request.body.policy, rounds: [{ round: 1, groups: [{
+          group: 1, candidates: moves.map((move) => move.id),
+          requested: true, raw_choice: moves[index].id, winner: moves[index].id,
+          overridden: false, probabilities: { [moves[index].id]: 1 },
+          selection: { reason: "Provider choice preserved.", filters: [], scores: {} },
+        }] }],
       });
       await settle();
     },
@@ -294,7 +310,6 @@ test("auto-run preserves invariant preflight, target stopping, and stagnation li
   goal.nodes.get("goal").value = "MII";
   const goalRun = goal.run("autoRun()");
   await goal.completeDecision(1);
-  await goal.fireTimer(750);
   await goalRun;
   assert.equal(goal.state.current, "MII");
   assert.equal(goal.state.auto, false);
@@ -377,4 +392,154 @@ test("both unavailable providers leave manual exploration enabled", async () => 
   app.nodes.get("moves").children[1].click();
   await app.movesResponse();
   assert.equal(app.state.current, "MII");
+});
+
+test("decision evidence survives refresh, undo, reset, reload, and JSON export", async () => {
+  const app = await createApp();
+  const step = app.run("jevStep()");
+  await app.decisionResponse(1);
+  await app.fireTimer(450);
+  await app.movesResponse();
+  await step;
+  const event = app.state.events.find((item) => item.type === "decision");
+  assert.equal(event.status, "applied");
+  assert.equal(event.request.current, "MI");
+  assert.equal(event.evidence.moves.length, 2);
+  assert.equal(event.evidence.rounds[0].groups[0].raw_choice, "move-1");
+  assert.equal(event.applied_move.result, "MII");
+  assert.equal(app.state.history[1].eventId, event.id);
+  assert.equal(app.nodes.get("history").children[1].children[0].className, "decision-details");
+  app.nodes.get("undo").click();
+  await app.movesResponse();
+  app.nodes.get("reset").click();
+  await app.movesResponse();
+  assert.equal(event.status, "applied");
+  assert.ok(app.state.events.some((item) => item.type === "undo"));
+  assert.ok(app.state.events.some((item) => item.type === "reset"));
+  const restored = await createApp(providers, app.storage);
+  const savedEvent = restored.state.events.find((item) => item.id === event.id);
+  assert.equal(savedEvent.evidence.rounds[0].groups[0].winner, "move-1");
+  assert.equal(restored.state.current, "MI");
+  restored.nodes.get("exportLog").click();
+  const exported = JSON.parse(await restored.downloads[0].text());
+  assert.equal(exported.schema_version, 1);
+  assert.equal(exported.events.length, restored.state.events.length);
+  assert.equal(exported.events.find((item) => item.id === event.id).applied_move.result, "MII");
+});
+
+test("tournament probabilities remain group-local in display and export", async () => {
+  const app = await createApp();
+  const step = app.run("jevStep()");
+  const moves = legalMenu("MI");
+  const group = (number, probability, winner) => ({
+    group: number, candidates: ["move-0", "move-1"], raw_choice: winner,
+    winner, requested: true, overridden: false,
+    probabilities: { "move-0": probability, "move-1": 1 - probability },
+    selection: { reason: "Provider choice preserved.", filters: [], scores: {} },
+  });
+  app.requests.shift().respond({
+    moves, move: moves[1], provider: "ollama", policy: "model",
+    rounds: [
+      { round: 1, groups: [group(1, 0.8, "move-0"), group(2, 0.3, "move-1")] },
+      { round: 2, groups: [group(1, 0.1, "move-1")] },
+    ],
+  });
+  await settle();
+  assert.equal(Object.keys(app.state.probabilities).length, 0);
+  const event = app.state.events.find((item) => item.type === "decision");
+  const details = app.nodes.get("decisionJournal").children.at(-1);
+  details.open = true;
+  details.listeners.get("toggle")();
+  const headings = details.children.filter((child) => child.textContent.startsWith("Round "));
+  assert.equal(headings.length, 3);
+  assert.ok(headings.every((heading) => heading.textContent.includes("within this group only")));
+  await app.fireTimer(450);
+  await app.movesResponse();
+  await step;
+  app.nodes.get("exportLog").click();
+  const exported = JSON.parse(await app.downloads[0].text());
+  const rounds = exported.events.find((item) => item.id === event.id).evidence.rounds;
+  assert.equal(rounds[0].groups[0].probabilities["move-0"], 0.8);
+  assert.equal(rounds[0].groups[1].probabilities["move-0"], 0.3);
+  assert.equal(rounds[1].groups[0].probabilities["move-0"], 0.1);
+});
+
+test("cancelled decisions and stop reasons are retained without applied moves", async () => {
+  const app = await createApp();
+  const run = app.run("autoRun()");
+  await app.run("autoRun()");
+  await app.decisionResponse(1);
+  await run;
+  const decision = app.state.events.find((item) => item.type === "decision");
+  assert.equal(decision.status, "rejected");
+  assert.equal(decision.reason, "run_cancelled");
+  assert.equal(decision.applied_move, undefined);
+  assert.ok(app.state.events.some((item) => item.type === "run_stopped" && item.reason === "user_stop"));
+});
+
+test("failed provider decisions retain partial server evidence", async () => {
+  const app = await createApp();
+  const step = app.run("jevStep()");
+  app.requests.shift().respond({
+    error: "Provider request timed out",
+    decision: { moves: legalMenu("MI"), rounds: [], provider_calls: 1 },
+  }, false);
+  await step;
+  const event = app.state.events.find((item) => item.type === "decision");
+  assert.equal(event.status, "error");
+  assert.equal(event.evidence.provider_calls, 1);
+  assert.match(event.reason, /timed out/);
+});
+
+test("reloading an unfinished decision records interruption, not success", async () => {
+  const app = await createApp();
+  app.run("jevStep()");
+  const restored = await createApp(providers, app.storage);
+  const event = restored.state.events.find((item) => item.type === "decision");
+  assert.equal(event.status, "interrupted");
+  assert.equal(event.applied_move, undefined);
+  assert.equal(restored.state.current, "MI");
+});
+
+test("reload closes unfinished runs and does not reuse their run IDs", async () => {
+  const app = await createApp();
+  app.run("autoRun()");
+  await app.completeDecision(1);
+  const oldRunId = app.state.autoRunId;
+  const restored = await createApp(providers, app.storage);
+  assert.ok(restored.state.events.some((event) =>
+    event.type === "run_stopped" && event.run_id === oldRunId && event.reason === "page_interrupted"));
+  const run = restored.run("autoRun()");
+  assert.ok(restored.state.autoRunId > oldRunId);
+  await restored.run("autoRun()");
+  await restored.decisionResponse(1);
+  await run;
+});
+
+test("storage failures leave an explicit persistent warning and exportable in-memory log", async () => {
+  const storage = new Map();
+  storage.set = () => { throw new Error("Quota exceeded"); };
+  const app = await createApp(providers, storage);
+  app.nodes.get("moves").children[1].click();
+  await app.movesResponse();
+  assert.equal(app.state.storageAvailable, false);
+  assert.match(app.nodes.get("journalNotice").textContent, /persistence is unavailable/);
+  app.nodes.get("exportLog").click();
+  const exported = JSON.parse(await app.downloads[0].text());
+  assert.ok(exported.events.some((item) => item.type === "manual_move"));
+});
+
+test("corrupt saved logs are not silently overwritten; explicit clear leaves derivation intact", async () => {
+  const storage = new Map([["miu-decision-journal-v1", "not JSON"]]);
+  const app = await createApp(providers, storage);
+  assert.equal(storage.get("miu-decision-journal-v1"), "not JSON");
+  assert.equal(app.state.storageAvailable, false);
+  app.nodes.get("moves").children[1].click();
+  await app.movesResponse();
+  app.nodes.get("clearLog").click();
+  assert.equal(app.state.events.length, 0);
+  assert.equal(app.state.current, "MII");
+  assert.equal(app.state.history.length, 2);
+  assert.equal(app.state.storageAvailable, true);
+  assert.equal(storage.has("miu-decision-journal-v1"), false);
 });

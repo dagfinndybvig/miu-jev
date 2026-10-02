@@ -266,6 +266,17 @@ h2 { margin: 5px 0 0; font-size: 1rem; }
 
 .history-value { overflow-wrap: anywhere; font-family: "Cascadia Code", Consolas, monospace; }
 .history-rule { display: block; margin-top: 3px; color: var(--muted); font-size: 0.7rem; }
+.history-panel li > .decision-details { grid-column: 2; }
+.journal-panel { margin-top: 16px; padding: 22px; }
+.journal-help { color: var(--muted); font-size: 0.85rem; line-height: 1.5; }
+#decisionJournal { max-height: 600px; overflow: auto; }
+.decision-details { margin: 10px 0; min-width: 0; font-size: 0.8rem; }
+.decision-details summary { cursor: pointer; overflow-wrap: anywhere; }
+.decision-details pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.decision-details table { width: 100%; table-layout: fixed; border-collapse: collapse; }
+.decision-details th, .decision-details td {
+  padding: 6px; border: 1px solid var(--line); text-align: left; overflow-wrap: anywhere;
+}
 
 .settings { margin-top: 16px; padding: 18px 22px; }
 .settings summary { cursor: pointer; font-weight: 700; }

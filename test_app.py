@@ -2,12 +2,14 @@ import http.client
 import io
 import json
 import threading
+import urllib.error
 import unittest
 from http.server import ThreadingHTTPServer
 from unittest.mock import patch
 
 from app import (
     MAX_MIU_LENGTH,
+    DecisionError,
     RequestHandler,
     choose_move,
     contraction_opportunities,
@@ -128,7 +130,7 @@ class SelectionTests(unittest.TestCase):
             for index in range(30)
         ]
         decide.side_effect = (
-            lambda provider, model, policy, current, goal, history, candidates, max_length: (
+            lambda provider, model, policy, current, goal, history, candidates, max_length, trace=None: (
                 candidates[-1],
                 {
                     candidate["id"]: 1 / len(candidates)
@@ -385,6 +387,111 @@ class HttpApiTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(payload["move"]["result"], "MII")
         self.assertEqual(payload["moves"], legal_moves("MI"))
+
+
+class DecisionTraceTests(unittest.TestCase):
+    @patch("app.require_compatible_ollama")
+    def test_guidance_records_raw_choice_and_actual_filter(self, _compatible):
+        response = io.BytesIO(json.dumps({"answers": {"next_move": {
+            "choice": "A", "probabilities": {"A": 1, "B": 0},
+        }}}).encode())
+        with patch("app.urllib.request.urlopen", return_value=response):
+            result = choose_move(
+                "ollama", "nimble:latest", "guided", "MI", "MUI", ["MI"], legal_moves("MI"),
+            )
+        group = result["rounds"][0]["groups"][0]
+        self.assertEqual(group["raw_choice"], "move-0")
+        self.assertEqual(group["winner"], "move-1")
+        self.assertTrue(group["overridden"])
+        self.assertEqual(result["override_count"], 1)
+        self.assertEqual(result["provider_calls"], 1)
+        self.assertEqual(result["move"]["result"], "MII")
+        self.assertEqual(group["probabilities"], {"move-0": 1, "move-1": 0})
+        self.assertIn("growth-only traps", group["selection"]["filters"][-1]["reason"])
+        self.assertEqual(group["selection"]["filters"][-1]["eligible"], ["move-1"])
+        score = group["selection"]["scores"]["move-1"]
+        self.assertEqual(score["total"], score["heuristic"] + score["probability_adjustment"])
+
+    @patch("app.require_compatible_ollama")
+    def test_tournament_keeps_independent_group_distributions(self, _compatible):
+        def respond(request, **_kwargs):
+            keys = list(json.loads(request.data)["questions"]["next_move"]["criteria"])
+            return io.BytesIO(json.dumps({"answers": {"next_move": {
+                "choice": keys[0],
+                "probabilities": {key: 1.0 / len(keys) for key in keys},
+            }}}).encode())
+
+        moves = legal_moves("M" + "I" * 30)
+        with patch("app.urllib.request.urlopen", side_effect=respond):
+            result = choose_move("ollama", "nimble", "model", "M" + "I" * 30, "MU", [], moves)
+        self.assertEqual(result["provider_calls"], 3)
+        first_groups = result["rounds"][0]["groups"]
+        self.assertEqual([len(group["candidates"]) for group in first_groups], [26, 4])
+        self.assertEqual(
+            [id_ for group in first_groups for id_ in group["candidates"]],
+            [move["id"] for move in moves],
+        )
+        for round_ in result["rounds"]:
+            self.assertNotIn("probabilities", round_)
+            for group in round_["groups"]:
+                self.assertAlmostEqual(sum(group["probabilities"].values()), 1)
+                self.assertEqual(group["raw_choice"], group["winner"])
+                self.assertFalse(group["overridden"])
+                self.assertEqual(group["probability_scope"], "within this group only")
+        self.assertEqual(result["rounds"][1]["groups"][0]["candidates"],
+                         [group["winner"] for group in first_groups])
+
+    @patch("app.decision_request")
+    def test_single_candidate_has_no_fabricated_model_choice_or_probability(self, decide):
+        result = choose_move("ollama", "nimble", "guided", "MIU", "MU", [], legal_moves("MIU"))
+        decide.assert_not_called()
+        group = result["rounds"][0]["groups"][0]
+        self.assertFalse(group["requested"])
+        self.assertIsNone(group["raw_choice"])
+        self.assertEqual(group["probabilities"], {})
+        self.assertEqual(result["provider_calls"], 0)
+        self.assertEqual(group["winner"], result["move"]["id"])
+
+    @patch("app.require_compatible_ollama")
+    def test_partial_tournament_failure_preserves_completed_group_evidence(self, _compatible):
+        response = io.BytesIO(json.dumps({"answers": {"next_move": {
+            "choice": "A", "probabilities": {"A": 1},
+        }}}).encode())
+        with patch("app.urllib.request.urlopen", side_effect=[response, TimeoutError()]):
+            with self.assertRaises(DecisionError) as failure:
+                choose_move(
+                    "ollama", "nimble", "model", "M" + "I" * 30, "MU", [],
+                    legal_moves("M" + "I" * 30),
+                )
+        trace = failure.exception.decision
+        self.assertEqual(trace["provider_calls"], 2)
+        self.assertEqual(trace["rounds"][0]["groups"][0]["winner"], "move-0")
+        self.assertEqual(trace["rounds"][0]["winners"], 1)
+        self.assertIn("timed out", trace["rounds"][0]["groups"][1]["error"])
+        self.assertNotIn("move", trace)
+
+    @patch("app.require_compatible_ollama")
+    def test_provider_error_body_is_not_copied_into_persistent_evidence(self, _compatible):
+        error = urllib.error.HTTPError(
+            "http://localhost/test", 401, "Unauthorized", {},
+            io.BytesIO(b"sensitive-provider-response-placeholder"),
+        )
+        with patch("app.urllib.request.urlopen", side_effect=error):
+            with self.assertRaises(DecisionError) as failure:
+                choose_move("ollama", "nimble", "model", "MI", "MU", [], legal_moves("MI"))
+        serialized = json.dumps(failure.exception.decision)
+        self.assertNotIn("sensitive-provider-response-placeholder", serialized)
+        self.assertIn("HTTP 401", serialized)
+
+    def test_explanations_do_not_change_policy_choices(self):
+        for current in ("MI", "MII", "MIII", "MIIII", "MIIIUU"):
+            moves = legal_moves(current)
+            for policy in ("guided", "model"):
+                with self.subTest(current=current, policy=policy):
+                    evidence = {}
+                    args = (policy, current, "MUI", [current], moves, moves[0], {}, 64)
+                    self.assertEqual(select_move(*args), select_move(*args, evidence))
+                    self.assertIn("reason", evidence)
 
 
 if __name__ == "__main__":

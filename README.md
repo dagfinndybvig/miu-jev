@@ -3,16 +3,19 @@
 # MIU × Jev
 
 **MIU × Jev** is an experiment in constrained machine choice. A formal engine
-generates every move permitted by the MIU system, and a decision model chooses
-one move from that menu. Local **Ollama 0.35.0 or later** with Nimble is the
+generates every move permitted by the MIU system, and a decision model evaluates
+that menu. **Guided** mode uses heuristics with model-assisted ranking;
+**Model only** preserves the provider's choice, subject to execution limits.
+Local **Ollama 0.35.0 or later** with Nimble is the
 default; TypeSafe's hosted Jev API is an optional secondary provider. In either
-mode, the model may decide *which* legal path to follow, but it can never
+mode, the selected policy determines *which* legal path to follow, but it can never
 invent a rule, alter a string directly, or make an illegal move.
 
 The result is a small, inspectable example of an AI operating inside hard
 symbolic boundaries:
 
-> The formal system determines what is possible. Jev determines what to try.
+> The formal system determines what is legal. The selected policy determines
+> how model advice is used.
 
 ## Quick start
 
@@ -303,8 +306,8 @@ At each step it:
 
 ```text
 legal = enumerate_every_legal_application(current)
-probabilities = decision_model(current, target, history, legal)
-chosen = apply_policy(probabilities, legal, history)
+decision = decision_model(current, target, history, legal)
+chosen = apply_policy(decision, legal, history)
 current = apply(chosen)
 ```
 
@@ -373,7 +376,9 @@ system naturally:
 4. The model selects the move it considers most promising.
 5. The engine applies the selected move and records the derivation.
 
-The model is the strategy, not the referee. Correctness does not depend on the
+The model contributes strategy; it is not the referee. In guided mode,
+deterministic preferences can override its choice, and the log records that
+override. Correctness does not depend on the
 model knowing the MIU rules or reliably reproducing them. Even a surprising or
 poor strategic choice remains a valid formal step because the deterministic
 engine controls the action space.
@@ -480,7 +485,7 @@ whether the model's strategy is useful.
 
 The browser UI provides:
 
-- **Ask Jev for one move** to request one decision from the selected provider;
+- **Request one decision** to evaluate the current menu using the selected policy;
 - **Auto-run** to continue choosing until stopped, stuck, or at the target;
 - configurable auto-run step and string-length budgets;
 - invariant preflight before automatic search;
@@ -494,6 +499,12 @@ The browser UI provides:
 - the complete menu of legal rewrites at every step;
 - manual selection of any legal move;
 - decision probabilities when available;
+- expandable decision records alongside history, including raw choices and
+  deterministic guidance overrides;
+- group- and round-specific tournament evidence, never a merged global
+  probability distribution;
+- a locally saved event log and JSON export, including rejected decisions,
+  errors, manual moves, undo/reset, and run stop reasons;
 - undo, reset, and a complete derivation history;
 - live string length, legal-move count, and `I` count modulo three; and
 - editable target, model, and auto-run speed settings.
@@ -515,6 +526,9 @@ web/
   app.js        client state and interaction
 test_app.py     rule-engine and selection tests
 test_web.js     browser-state regression tests (Node.js built-ins)
+benchmark.py    controlled comparisons and bounded BFS reference paths
+test_benchmark.py benchmark generation, safety, and measurement tests
+benchmark-results.json measured sample with per-trial evidence
 ```
 
 The Python server is stateless with respect to a run. The browser sends the
@@ -539,6 +553,41 @@ engine do not need provider-specific logic.
 Provider responses must select a supplied move and contain finite probabilities
 between zero and one when probabilities are supplied. Malformed responses are
 reported as upstream errors rather than forwarded as invalid JSON.
+
+### Decision records and local persistence
+
+`POST /api/choose` returns the current state, target, provider/model, policy,
+history, length budget, legal menu, selected move, timings, and provider-call
+and override counts. Each tournament round contains separate `groups`, each
+with candidate IDs, raw provider choice, advancing winner, probabilities, and
+the actual filters and scores used by guidance. The old merged round-level
+`probabilities` field is replaced by `rounds[].groups[].probabilities`.
+An override means a group's winner differs from that group's raw choice;
+there is no single raw choice over the original menu in a multi-round tournament.
+Singleton groups advance without a provider call, raw choice, or fabricated
+100% model confidence. Upstream failures include partial decision evidence
+when available; provider response bodies and authorization headers are not logged.
+
+The browser links applied decisions to derivation entries and keeps rejected
+decisions separately. Expand a record to inspect candidates and per-group
+probabilities. Filter explanations describe deterministic code, not an inferred
+explanation of the model's internal reasoning.
+
+The journal is saved in this browser's `localStorage` for the app's origin.
+It survives undo, reset, and page reload; the active derivation starts at `MI`
+after reload rather than resuming an interrupted run. Pending decisions are
+marked interrupted and unfinished runs receive a `page_interrupted` stop
+event. Use one active app tab per origin for this local journal. **Export JSON**
+saves a portable snapshot of the active
+derivation and journal; **Clear saved log** removes saved evidence without
+changing the active derivation. Logs contain MIU states and provider/model
+names, never provider credentials. On shared browsers, clear the log when done.
+Changing the server port changes the browser origin and its saved log.
+
+Browser storage is finite. If saving fails or stored data is unreadable, an
+explicit warning remains visible. New records remain in memory and can be
+exported; unreadable saved data is not silently overwritten. Export before
+closing the page. The Python server does not persist browser journals.
 
 ### Runaway-search protection
 
@@ -578,7 +627,7 @@ the exploratory override when they want impossible targets rejected outright.
 ### Guided selection heuristics
 
 Prompting alone does not reliably teach a decision model how to control an
-open-ended symbolic search. The default **Guided · reductions first** policy
+open-ended symbolic search. The default **Guided · heuristics + model ranking** policy
 therefore combines the provider's probability distribution with deterministic
 search heuristics:
 
@@ -685,7 +734,7 @@ python app.py --host 127.0.0.1 --port 9000
 
 ```powershell
 python -m unittest -v
-python -m py_compile app.py test_app.py
+python -m py_compile app.py test_app.py benchmark.py test_benchmark.py
 node --check web\app.js
 node --test test_web.js
 ```
@@ -695,14 +744,100 @@ validation, required TypeSafe credential handling, the Ollama 0.35.0+
 requirement and 26-choice tournament behavior, and TypeSafe's larger choice
 window. They also cover HTTP validation, malformed provider responses, explicit
 hosted-provider selection, stale menus, auto-run cancellation, and provider
-status. Browser-state tests use Node.js 18 or later with no npm dependencies;
+status, decision journals, tournament evidence, export, and benchmark metrics.
+Browser-state tests use Node.js 18 or later with no npm dependencies;
 Node.js is not required to run the app.
+
+## Controlled strategy comparisons
+
+Run the random and heuristic-only baselines without any model calls:
+
+```powershell
+python benchmark.py --output baseline-results.json
+```
+
+To include both model-only and guided policies for a provider, opt in explicitly:
+
+```powershell
+python benchmark.py --providers ollama --output local-results.json
+python benchmark.py --providers ollama typesafe --output comparison-results.json
+```
+
+The TypeSafe command sends only generated MIU benchmark inputs to the hosted
+service and requires a configured key. Provider failures are reported as failed
+trials, never replaced with a baseline or another provider. The runner performs
+real inference and may incur hosted usage charges. Default model aliases can be
+overridden with `--ollama-model` and `--typesafe-model`.
+
+All strategies start at `MI` with the same step, length, cycle, and edit-distance
+stagnation limits. Random selects uniformly over legal applications; the
+heuristic baseline uses the guided filters and scores with zero model
+probability contribution, on the full menu without provider tournaments.
+Model-only and random choices can be rejected by execution budgets; guided
+selection prefers in-budget moves. Baselines make no provider calls.
+
+Targets are sampled reproducibly from a bounded breadth-first traversal, with
+legal witness derivations and a spread of reference depths, not chosen based
+on which strategy wins. BFS distances are shortest **within its length bound**,
+not claims about unbounded optimality. The report records depth/state limits
+and whether the state cap truncated enumeration; the depth bound always
+applies. `MU` is evaluated separately as
+deliberate impossible-target exploration and is excluded from reachable-target
+success rates.
+
+Each report retains trial order, seeds, budgets, source hashes, witnesses,
+paths, decision evidence, stop outcomes, timings, provider calls, and group-level
+overrides. Provider-call counts measure attempted group decisions, including
+failed attempts; singleton advances do not count. Summaries include success rates, steps, successful path overhead
+relative to bounded BFS, and latency. Failed attempts remain in the denominator.
+Seeds control target generation, trial order, and the random baseline; they do
+not control provider sampling. Provider model aliases may change over time.
+Latency includes version checks and inference, but not browser animation or
+auto-run delays. Reports are checkpointed after each trial; inspect `completed`
+before treating one as a complete comparison.
+
+### Measured sample: 2 October 2026
+
+The checked-in [raw report](benchmark-results.json) contains 60 trials: four
+reachable targets at reference depths 3, 4, 5, and 6, plus separate `MU`
+exploration, repeated twice for each of six configurations. Reproduce its setup:
+
+```powershell
+python benchmark.py --providers ollama typesafe --targets 4 --repeats 2 --max-steps 10 --max-length 32 --stagnation-limit 4 --bfs-depth 7 --bfs-states 10000 --seed 20261002 --output comparison-results.json
+```
+
+Reachable-target results only (eight attempts per configuration):
+
+| Strategy | Successes | Mean applied steps, all attempts | Mean latency per attempt | Provider calls, total | Group override rate |
+|---|---:|---:|---:|---:|---:|
+| Seeded random | 0/8 | 4.00 | 0.21 ms | 0 | n/a |
+| Heuristic only | 2/8 | 5.25 | 0.42 ms | 0 | n/a |
+| Nimble model-only | 2/8 | 5.00 | 542 ms | 28 | 0% |
+| Nimble guided | 2/8 | 5.25 | 663 ms | 36 | 38.9% |
+| Jev model-only | 3/8 | 5.50 | 1,535 ms | 38 | 0% |
+| Jev guided | 2/8 | 5.25 | 1,361 ms | 36 | 50.0% |
+
+Heuristic-only and guided policies solved `MUI`; model-only policies instead
+solved `MIIIIIIIIU`, and Jev model-only also solved `MIUUIIIIU` in one of its
+two attempts. None solved `MIIIIIUIIIIUI` under these budgets. Every successful
+path matched its bounded-BFS reference length.
+All twelve separate `MU` trials stopped on stagnation; their inability to reach
+`MU` is explained by the invariant, not a model-quality score.
+
+**This sample shows no success-rate improvement from adding a model to the
+heuristic policy, while adding latency and provider calls.** Jev model-only
+had one additional success, but that is not enough to establish an advantage.
+Different raw choices were often overridden. This is a small, exploratory sample with only
+two repetitions, changing model aliases, and machine/network-dependent timings:
+it is not evidence of statistical superiority or equivalence. Broader target
+sets and repeated measurements are necessary before making stronger claims.
 
 ## Scope
 
 This is an MVP and an exploratory instrument, not a general theorem prover.
-Jev has no persistent learned strategy, exhaustive search, or proof-producing
-planner. Its choices are local decisions informed by the current state, target,
+The app does not train or adapt the provider across runs and has no exhaustive
+interactive search or proof-producing planner. Its choices are local decisions
+informed by the current state, target,
 recent derivation, and move descriptions.
 
 That limitation is deliberate: the project contrasts a model's step-by-step

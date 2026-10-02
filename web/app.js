@@ -11,8 +11,12 @@ const state = {
   auto: false,
   autoRunId: 0,
   providers: {},
+  events: [],
+  nextEventId: 1,
+  storageAvailable: true,
 };
 const SERVER_MAX_LENGTH = 8192;
+const JOURNAL_KEY = "miu-decision-journal-v1";
 
 const $ = (id) => document.getElementById(id);
 const elements = {
@@ -42,6 +46,10 @@ const elements = {
   stagnationLimit: $("stagnationLimit"),
   exploreImpossible: $("exploreImpossible"),
   runNotice: $("runNotice"),
+  journal: $("decisionJournal"),
+  exportLog: $("exportLog"),
+  clearLog: $("clearLog"),
+  journalNotice: $("journalNotice"),
 };
 
 function validMiu(value) {
@@ -71,7 +79,11 @@ async function api(path, body) {
     body: JSON.stringify(body),
   });
   const payload = await response.json();
-  if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+  if (!response.ok) {
+    const error = new Error(payload.error || `HTTP ${response.status}`);
+    error.decision = payload.decision;
+    throw error;
+  }
   return payload;
 }
 
@@ -83,6 +95,157 @@ function setError(message = "") {
 function setRunNotice(message = "") {
   elements.runNotice.textContent = message;
   elements.runNotice.classList.toggle("hidden", !message);
+}
+
+function saveJournal() {
+  if (!state.storageAvailable) return;
+  try {
+    localStorage.setItem(JOURNAL_KEY, JSON.stringify({ schema_version: 1, events: state.events }));
+  } catch {
+    state.storageAvailable = false;
+    setError("The decision log could not be saved locally. Export JSON before closing this page.");
+  }
+}
+
+function loadJournal() {
+  try {
+    const stored = localStorage.getItem(JOURNAL_KEY);
+    if (!stored) return;
+    const journal = JSON.parse(stored);
+    if (
+      journal.schema_version !== 1 || !Array.isArray(journal.events) ||
+      !journal.events.every((event) => Number.isSafeInteger(event.id) && event.id > 0 &&
+        typeof event.type === "string" && typeof event.timestamp === "string")
+    ) throw new Error("Invalid journal");
+    state.events = journal.events;
+    state.nextEventId = state.events.reduce((largest, event) => Math.max(largest, event.id), 0) + 1;
+    const unfinishedRuns = new Map();
+    for (const event of state.events) {
+      if (Number.isSafeInteger(event.run_id)) {
+        state.autoRunId = Math.max(state.autoRunId, event.run_id);
+      }
+      if (event.type === "run_started") unfinishedRuns.set(event.run_id, event);
+      if (event.type === "run_stopped") unfinishedRuns.delete(event.run_id);
+      if (event.status === "pending") {
+        event.status = "interrupted";
+        event.reason = "Page closed before the decision completed; application was not recorded.";
+      }
+    }
+    for (const run of unfinishedRuns.values()) {
+      recordEvent("run_stopped", { run_id: run.run_id, reason: "page_interrupted" });
+    }
+  } catch {
+    state.storageAvailable = false;
+    setError("The saved decision log could not be loaded. It has not been overwritten.");
+  }
+}
+
+function recordEvent(type, details = {}) {
+  const event = {
+    id: state.nextEventId++, timestamp: new Date().toISOString(), type,
+    ...details,
+  };
+  state.events.push(event);
+  saveJournal();
+  renderJournal();
+  return event;
+}
+
+function finishDecision(event, status, reason) {
+  event.status = status;
+  event.reason = reason;
+  event.completed_at = new Date().toISOString();
+  saveJournal();
+  renderJournal();
+}
+
+function recordDetails(event) {
+  const details = document.createElement("details");
+  details.className = "decision-details";
+  const summary = document.createElement("summary");
+  summary.textContent = `#${event.id} ${event.type.replaceAll("_", " ")} · ${event.status || event.reason || event.timestamp}`;
+  details.append(summary);
+  let loaded = false;
+  details.addEventListener("toggle", () => {
+    if (!details.open || loaded) return;
+    loaded = true;
+    const metadata = document.createElement("pre");
+    const { evidence, candidates, ...description } = event;
+    if (evidence) {
+      description.decision_summary = {
+        current: evidence.current, goal: evidence.goal,
+        provider: evidence.provider, model: evidence.model, policy: evidence.policy,
+        provider_calls: evidence.provider_calls, override_count: evidence.override_count,
+        elapsed_ms: evidence.elapsed_ms,
+      };
+    }
+    metadata.textContent = JSON.stringify(description, null, 2);
+    details.append(metadata);
+    const moves = evidence?.moves || candidates || [];
+    for (const round of evidence?.rounds || []) {
+      for (const group of round.groups) {
+        const heading = document.createElement("p");
+        heading.textContent = `Round ${round.round}, group ${group.group}: probability within this group only. ` +
+          `Raw choice: ${group.raw_choice || "none (no completed provider choice)"}. ` +
+          `Advanced: ${group.winner || "none"}. Guidance override: ${group.overridden ? "yes" : "no"}. ` +
+          (group.selection?.reason || group.error || "");
+        details.append(heading);
+        const filters = document.createElement("pre");
+        filters.textContent = JSON.stringify(group.selection || {}, null, 2);
+        details.append(filters);
+        const table = document.createElement("table");
+        const header = document.createElement("tr");
+        for (const label of ["Move", "Rule / position", "Result", "Group probability"]) {
+          const cell = document.createElement("th");
+          cell.textContent = label;
+          header.append(cell);
+        }
+        table.append(header);
+        for (const id of group.candidates) {
+          const move = moves.find((candidate) => candidate.id === id);
+          const row = document.createElement("tr");
+          const probability = group.probabilities[id];
+          for (const value of [
+            id, move ? `${move.rule} / ${move.position ?? "n/a"}` : "n/a",
+            move?.result || "not recorded",
+            probability === undefined ? "not supplied" : `${(probability * 100).toFixed(2)}%`,
+          ]) {
+            const cell = document.createElement("td");
+            cell.textContent = value;
+            row.append(cell);
+          }
+          table.append(row);
+        }
+        details.append(table);
+      }
+    }
+    if (!evidence?.rounds?.length && moves.length) {
+      const menu = document.createElement("pre");
+      menu.textContent = JSON.stringify(moves, null, 2);
+      details.append(menu);
+    }
+  });
+  return details;
+}
+
+function renderJournal() {
+  elements.journalNotice.textContent = state.storageAvailable ? "" :
+    "Local log persistence is unavailable. New records remain in this page only; export JSON before closing it.";
+  elements.journal.replaceChildren();
+  for (const event of state.events) elements.journal.append(recordDetails(event));
+}
+
+function exportJournal() {
+  const payload = {
+    schema_version: 1, exported_at: new Date().toISOString(),
+    current: state.current, history: state.history, events: state.events,
+  };
+  const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "miu-decision-log.json";
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function updateInvariantNotice() {
@@ -124,6 +287,7 @@ function setBusy(busy) {
   elements.autoRun.disabled = !state.auto && (busy || unavailable || state.moves.length === 0);
   elements.undo.disabled = busy || state.auto || state.history.length <= 1;
   elements.reset.disabled = busy;
+  elements.clearLog.disabled = busy || state.auto;
   elements.goal.disabled = busy || state.auto;
   elements.model.disabled = busy || state.auto;
   elements.provider.disabled = busy || state.auto;
@@ -166,7 +330,7 @@ function render() {
           <span class="move-detail">${move.detail}</span>
         </span>
         <span class="probability">${
-          probability === undefined ? "" : `${Math.round(probability * 100)}%`
+          probability === undefined ? "" : `${Math.round(probability * 100)}% in group`
         }</span>`;
       button.disabled = state.busy || state.auto;
       button.addEventListener("click", () => {
@@ -181,9 +345,12 @@ function render() {
     const item = document.createElement("li");
     item.innerHTML = `<span><span class="history-value">${entry.value}</span>
       <span class="history-rule">${entry.label}</span></span>`;
+    const event = state.events.find((candidate) => candidate.id === entry.eventId);
+    if (event) item.append(recordDetails(event));
     elements.history.append(item);
   }
   elements.history.scrollTop = elements.history.scrollHeight;
+  renderJournal();
   setBusy(state.busy);
 }
 
@@ -203,22 +370,27 @@ async function refreshMoves() {
   return true;
 }
 
-function stopAutoRun() {
+function stopAutoRun(reason = "stopped") {
+  if (state.auto) recordEvent("run_stopped", {
+    run_id: state.autoRunId, current: state.current, reason,
+  });
   state.auto = false;
   state.autoRunId += 1;
 }
 
-async function setHistory(history) {
+async function setHistory(history, appliedEvent = null, reason = "") {
   const wasBusy = state.busy;
   setBusy(true);
   state.history = history;
   state.current = history.at(-1).value;
   state.revision += 1;
+  if (appliedEvent) finishDecision(appliedEvent, "applied", reason);
   try {
     return await refreshMoves();
   } catch (error) {
     setError(error.message);
-    stopAutoRun();
+    recordEvent("menu_error", { current: state.current, reason: error.message });
+    stopAutoRun("menu_error");
     return false;
   } finally {
     setBusy(wasBusy);
@@ -226,22 +398,29 @@ async function setHistory(history) {
   }
 }
 
-async function applyMove(move, source = "Manual choice") {
+async function applyMove(move, source = "Manual choice", decision = null) {
+  const event = decision || recordEvent("manual_move", {
+    current: state.current, goal: elements.goal.value.trim().toUpperCase(),
+    candidates: state.moves, move,
+  });
   if (state.movesRevision !== state.revision || !state.moves.includes(move)) {
     setError("Move discarded because its legal menu is no longer current.");
+    finishDecision(event, "rejected", "stale_menu");
     return false;
   }
   if (move.result.length > SERVER_MAX_LENGTH) {
     setError(
       `That move would exceed the server limit of ${SERVER_MAX_LENGTH} characters.`,
     );
+    finishDecision(event, "rejected", "server_length_limit");
     return false;
   }
   setError();
+  event.applied_move = move;
   return setHistory([
     ...state.history,
-    { value: move.result, label: `${move.label} · ${source}` },
-  ]);
+    { value: move.result, label: `${move.label} · ${source}`, eventId: event.id },
+  ], event, source);
 }
 
 async function jevStep(runId = null) {
@@ -260,45 +439,53 @@ async function jevStep(runId = null) {
   }
   setError();
   setBusy(true);
+  const request = {
+    current: requestedCurrent, goal, provider: elements.provider.value,
+    model: elements.model.value.trim(), policy: elements.policy.value,
+    history: state.history.map((entry) => entry.value),
+    max_length: Math.max(8, Math.min(SERVER_MAX_LENGTH, Number(elements.maxLength.value) || 64)),
+  };
+  const decision = recordEvent("decision", {
+    status: "pending", run_id: runId, request, candidates: state.moves,
+  });
   try {
-    const payload = await api("/api/choose", {
-      current: requestedCurrent,
-      goal,
-      provider: elements.provider.value,
-      model: elements.model.value.trim(),
-      policy: elements.policy.value,
-      history: state.history.map((entry) => entry.value),
-      max_length: Math.max(
-        8,
-        Math.min(SERVER_MAX_LENGTH, Number(elements.maxLength.value) || 64),
-      ),
-    });
-    if (autoMode && (!state.auto || state.autoRunId !== runId)) return false;
+    const payload = await api("/api/choose", request);
+    decision.evidence = payload;
+    delete decision.candidates;
+    saveJournal();
+    if (autoMode && (!state.auto || state.autoRunId !== runId)) {
+      finishDecision(decision, "rejected", "run_cancelled");
+      return false;
+    }
     if (state.revision !== requestedRevision || state.current !== requestedCurrent) {
       setRunNotice("Decision discarded because the current string changed.");
-      stopAutoRun();
+      finishDecision(decision, "rejected", "state_changed");
+      stopAutoRun("state_changed");
       return false;
     }
     state.moves = payload.moves;
     state.movesRevision = requestedRevision;
     state.selectedId = payload.move.id;
-    state.probabilities = Object.assign(
-      {},
-      ...payload.rounds.map((round) => round.probabilities),
-    );
+    state.probabilities = payload.rounds.length === 1 && payload.rounds[0].groups.length === 1
+      ? payload.rounds[0].groups[0].probabilities : {};
     render();
     await new Promise((resolve) => setTimeout(resolve, state.auto ? 100 : 450));
-    if (autoMode && (!state.auto || state.autoRunId !== runId)) return false;
+    if (autoMode && (!state.auto || state.autoRunId !== runId)) {
+      finishDecision(decision, "rejected", "run_cancelled");
+      return false;
+    }
     if (state.revision !== requestedRevision || state.current !== requestedCurrent) {
       setRunNotice("Decision discarded because the current string changed.");
-      stopAutoRun();
+      finishDecision(decision, "rejected", "state_changed");
+      stopAutoRun("state_changed");
       return false;
     }
     if (payload.move.result.length > Number(elements.maxLength.value)) {
       setRunNotice(
         `Model move not applied: it would grow the string to ${payload.move.result.length} characters.`,
       );
-      stopAutoRun();
+      finishDecision(decision, "rejected", "length_budget");
+      stopAutoRun("length_budget");
       return false;
     }
     if (
@@ -306,7 +493,8 @@ async function jevStep(runId = null) {
       state.history.some((entry) => entry.value === payload.move.result)
     ) {
       setRunNotice("Auto-run stopped before revisiting an earlier string.");
-      stopAutoRun();
+      finishDecision(decision, "rejected", "cycle");
+      stopAutoRun("cycle");
       return false;
     }
     const providerName =
@@ -315,10 +503,15 @@ async function jevStep(runId = null) {
       payload.policy === "guided" ? `${providerName} · guided` : `${providerName} · model only`;
     const move = state.moves.find((candidate) => candidate.id === payload.move.id);
     if (!move) throw new Error("Decision returned a move outside the legal menu.");
-    return await applyMove(move, source);
+    return await applyMove(move, source, decision);
   } catch (error) {
+    if (error.decision) {
+      decision.evidence = error.decision;
+      delete decision.candidates;
+    }
+    finishDecision(decision, "error", error.message);
     setError(error.message);
-    stopAutoRun();
+    stopAutoRun("api_error");
     render();
     return false;
   } finally {
@@ -330,7 +523,7 @@ async function jevStep(runId = null) {
 async function autoRun() {
   if (state.busy && !state.auto) return;
   if (state.auto) {
-    stopAutoRun();
+    stopAutoRun("user_stop");
     setRunNotice("Auto-run stopped.");
     render();
     return;
@@ -341,9 +534,17 @@ async function autoRun() {
   setError();
   setRunNotice();
   const goal = elements.goal.value.trim().toUpperCase();
+  if (!validMiu(goal)) {
+    recordEvent("run_rejected", { goal, reason: "invalid_target" });
+    stopAutoRun("invalid_target");
+    setError("Target must contain only M, I, and U.");
+    render();
+    return;
+  }
   const goalICount = [...goal].filter((character) => character === "I").length;
   if (goalICount % 3 === 0 && !elements.exploreImpossible.checked) {
-    state.auto = false;
+    recordEvent("run_rejected", { goal, reason: "invariant_impossible" });
+    stopAutoRun("invariant_impossible");
     setRunNotice(
       `Auto-run skipped: the modulo-3 invariant proves ${goal} is unreachable from MI. Enable exploratory auto-run to override.`,
     );
@@ -373,15 +574,31 @@ async function autoRun() {
   elements.stagnationLimit.value = stagnationLimit;
   let bestDistance = targetDistance(state.current, goal);
   let stagnantSteps = 0;
+  recordEvent("run_started", {
+    run_id: runId, current: state.current, goal,
+    provider: elements.provider.value, model: elements.model.value.trim(),
+    policy: elements.policy.value,
+    budgets: { max_steps: maxSteps, max_length: maxLength, stagnation_limit: stagnationLimit },
+    exploratory: goalICount % 3 === 0,
+  });
+  let stopReason = "no_moves";
   render();
   while (state.auto && state.moves.length && state.current !== elements.goal.value.trim().toUpperCase()) {
     if (state.history.length - 1 - startingStep >= maxSteps) {
       setRunNotice(`Auto-run stopped after its ${maxSteps}-step budget.`);
+      stopReason = "step_budget";
       break;
     }
     const moved = await jevStep(runId);
     if (state.autoRunId !== runId) return;
-    if (!moved) break;
+    if (!moved) {
+      stopReason = "decision_not_applied";
+      break;
+    }
+    if (state.current === goal) {
+      stopReason = "target_reached";
+      break;
+    }
     const distance = targetDistance(state.current, goal);
     if (distance < bestDistance) {
       bestDistance = distance;
@@ -393,12 +610,14 @@ async function autoRun() {
       setRunNotice(
         `Auto-run stopped after ${stagnationLimit} steps without getting closer to ${goal}.`,
       );
+      stopReason = "stagnation";
       break;
     }
     await new Promise((resolve) => setTimeout(resolve, Number(elements.delay.value)));
     if (state.autoRunId !== runId) return;
   }
-  state.auto = false;
+  if (state.current === goal) stopReason = "target_reached";
+  stopAutoRun(stopReason);
   render();
 }
 
@@ -406,14 +625,16 @@ elements.jevStep.addEventListener("click", () => jevStep());
 elements.autoRun.addEventListener("click", autoRun);
 elements.undo.addEventListener("click", async () => {
   if (state.history.length <= 1 || state.busy || state.auto) return;
-  stopAutoRun();
+  stopAutoRun("undo");
+  recordEvent("undo", { current: state.current, removed: state.history.at(-1) });
   setError();
   setRunNotice();
   await setHistory(state.history.slice(0, -1));
 });
 elements.reset.addEventListener("click", async () => {
   if (state.busy) return;
-  stopAutoRun();
+  stopAutoRun("reset");
+  recordEvent("reset", { current: state.current, history: state.history });
   setError();
   setRunNotice();
   await setHistory([{ value: "MI", label: "Axiom" }]);
@@ -430,8 +651,26 @@ elements.provider.addEventListener("change", () => {
   }
 });
 elements.model.addEventListener("input", updateEngineStatus);
+elements.exportLog.addEventListener("click", exportJournal);
+elements.clearLog.addEventListener("click", () => {
+  if (state.busy || state.auto) {
+    setError("Stop the run and wait for the current operation before clearing the log.");
+    return;
+  }
+  try {
+    localStorage.removeItem(JOURNAL_KEY);
+    state.events = [];
+    state.storageAvailable = true;
+    setError();
+    render();
+  } catch {
+    setError("The saved decision log could not be cleared.");
+  }
+});
 
 async function boot() {
+  loadJournal();
+  recordEvent("session_started", { current: state.current });
   setBusy(true);
   try {
     const health = await fetch("/api/health");

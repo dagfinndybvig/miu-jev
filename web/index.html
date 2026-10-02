@@ -17,7 +17,7 @@
           <p class="eyebrow">FORMAL PLAYGROUND / CONSTRAINED AI</p>
           <h1>MIU <span>×</span> Jev</h1>
           <p class="subtitle">
-            The machine enforces the rules. A decision model chooses where to go.
+            The engine enforces the rules. Your policy chooses how model advice is used.
             Explore reachable targets or watch a bounded impossible search.
           </p>
         </div>
@@ -53,7 +53,7 @@
           </div>
 
           <div class="controls">
-            <button class="primary" id="jevStep">Ask Jev for one move</button>
+            <button class="primary" id="jevStep">Request one decision</button>
             <button id="autoRun">Auto-run</button>
             <button id="undo" disabled>Undo</button>
             <button id="reset">Reset</button>
@@ -85,6 +85,24 @@
           </aside>
         </section>
 
+        <section class="panel journal-panel">
+          <div class="panel-heading">
+            <h2>Decision log</h2>
+            <div>
+              <button id="exportLog">Export JSON</button>
+              <button id="clearLog">Clear saved log</button>
+            </div>
+          </div>
+          <p class="journal-help">
+            Decisions, manual moves, rejected choices, and stop reasons are saved in this
+            browser, including across undo, reset, and reload. Export for a portable record.
+            Group probabilities are conditional on that group, not global confidence.
+            Explanations describe deterministic policy rules, not the model's private reasoning.
+          </p>
+          <p class="journal-help" id="journalNotice" role="status"></p>
+          <div id="decisionJournal"></div>
+        </section>
+
         <details class="settings panel">
           <summary>Settings & rules</summary>
           <div class="settings-grid">
@@ -102,8 +120,8 @@
             <label>
               Selection policy
               <select id="policy">
-                <option value="guided" selected>Guided · reductions first</option>
-                <option value="model">Model only · experimental</option>
+                <option value="guided" selected>Guided · heuristics + model ranking</option>
+                <option value="model">Model only · provider choice, safety limits</option>
               </select>
             </label>
             <label>

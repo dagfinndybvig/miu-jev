@@ -26,7 +26,7 @@ python app.py
 python -m unittest -v
 
 # Syntax checks
-python -m py_compile app.py test_app.py
+python -m py_compile app.py test_app.py benchmark.py test_benchmark.py
 node --check web\app.js
 node --test test_web.js
 ```
@@ -40,6 +40,8 @@ Python package dependencies and no frontend build step.
 app.py          MIU rules, provider clients, HTTP API, static file server
 test_app.py     unit tests for rules, provider limits, and configuration
 test_web.js     browser-state regression tests using Node.js built-ins
+benchmark.py    controlled baseline/provider comparisons and bounded BFS
+test_benchmark.py benchmark witness, budget, and metric tests
 web/index.html  page structure and settings
 web/styles.css  responsive presentation
 web/app.js      browser state, API calls, controls, and rendering
@@ -102,6 +104,12 @@ Both providers receive the same state:
 
 They return a choice and probabilities. Keep provider-specific behavior behind
 `decision_request`.
+
+Decision evidence must retain raw provider choices separately from guided
+winners. Keep probabilities scoped to each tournament group and round; never
+merge them into a global distribution. Explanations describe actual policy
+filters and scores, not inferred model reasoning. Singleton groups make no
+provider call and must not invent a model probability.
 
 The default `guided` policy is intentionally reduction-first. If a group has
 any shortening moves, `select_move` must choose within that subset. Otherwise
@@ -198,6 +206,9 @@ from TypeSafe to Ollama 0.35.0+ or vice versa.
 - Keep manual selection, undo, reset, probabilities, and derivation history
   working for both providers.
 - Avoid putting secrets or provider authorization logic in `web/app.js`.
+- Retain decision evidence across moves, undo/reset, and reload in the local
+  journal. Export includes rejected decisions and stop reasons; storage
+  failures must be visible and must not disable in-memory export.
 
 ## Testing expectations
 
@@ -216,7 +227,7 @@ At minimum, run:
 
 ```powershell
 python -m unittest -v
-python -m py_compile app.py test_app.py
+python -m py_compile app.py test_app.py benchmark.py test_benchmark.py
 node --check web\app.js
 node --test test_web.js
 ```
@@ -224,6 +235,13 @@ node --test test_web.js
 For provider changes, also perform one live `/api/choose` request for each
 configured provider. Use harmless MIU state only. Never place a real key in a
 command, test fixture, source file, log, or commit.
+
+`python benchmark.py --output baseline-results.json` runs keyless baselines.
+Model comparisons require explicit `--providers ollama` or
+`--providers ollama typesafe`. Apply the same execution budgets to every
+strategy, keep impossible-target exploration out of reachable success rates,
+and retain failures and negative results. Source hashes in a published report
+must match the implementation that produced it; do not relabel old measurements.
 
 ## Documentation
 
