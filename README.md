@@ -1,4 +1,4 @@
-<img width="658" height="1000" alt="geb2" src="https://github.com/user-attachments/assets/5a434868-854f-44a4-b2e5-bc93a3014b0a" />
+<img width="1253" height="670" alt="image" src="https://github.com/user-attachments/assets/aadd6d09-1450-43f9-95a0-f46e7548ead8" />
 
 # Formalism × Jev
 
