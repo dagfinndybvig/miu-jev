@@ -410,6 +410,8 @@ function render() {
   }
   updateInvariantNotice();
   elements.current.textContent = state.current;
+  elements.current.classList.toggle("medium", state.current.length > 18);
+  elements.current.classList.toggle("long", state.current.length > 40);
   elements.stepCount.textContent = state.history.length - 1;
   elements.lengthCount.textContent = state.current.length;
   elements.moveCount.textContent = state.moves.length;
