@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="An exact MIU formal-system engine with a local Jev decision model choosing each move."
+    />
+    <title>MIU × Jev</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <header>
+        <div>
+          <p class="eyebrow">FORMAL PLAYGROUND / LOCAL AI</p>
+          <h1>MIU <span>×</span> Jev</h1>
+          <p class="subtitle">
+            The machine enforces the rules. Nimble chooses where to go.
+          </p>
+        </div>
+        <div class="status" id="ollamaStatus">
+          <span class="status-dot"></span>
+          <span>Checking Ollama</span>
+        </div>
+      </header>
+
+      <main>
+        <section class="stage panel">
+          <div class="stage-top">
+            <div>
+              <span class="label">CURRENT STRING</span>
+              <div class="current-string" id="currentString">MI</div>
+            </div>
+            <div class="target-wrap">
+              <label for="goal">TARGET</label>
+              <input id="goal" value="MU" maxlength="40" spellcheck="false" />
+            </div>
+          </div>
+
+          <div class="metrics">
+            <div><span id="stepCount">0</span><small>STEPS</small></div>
+            <div><span id="lengthCount">2</span><small>LENGTH</small></div>
+            <div><span id="moveCount">—</span><small>LEGAL MOVES</small></div>
+            <div><span id="iModulo">1</span><small>#I MOD 3</small></div>
+          </div>
+
+          <div class="notice" id="invariantNotice">
+            <strong>Invariant watch:</strong> starting at MI, the number of I’s
+            can never become divisible by 3. MU is therefore unreachable.
+          </div>
+
+          <div class="controls">
+            <button class="primary" id="jevStep">Ask Jev for one move</button>
+            <button id="autoRun">Auto-run</button>
+            <button id="undo" disabled>Undo</button>
+            <button id="reset">Reset</button>
+          </div>
+          <div class="error hidden" id="errorBox"></div>
+        </section>
+
+        <section class="workspace">
+          <div class="panel moves-panel">
+            <div class="panel-heading">
+              <div>
+                <span class="label">LEGAL MENU</span>
+                <h2>Choose the next rewrite</h2>
+              </div>
+              <span class="thinking hidden" id="thinking">Nimble is deciding…</span>
+            </div>
+            <div class="moves" id="moves"></div>
+          </div>
+
+          <aside class="panel history-panel">
+            <div class="panel-heading">
+              <div>
+                <span class="label">DERIVATION</span>
+                <h2>History</h2>
+              </div>
+            </div>
+            <ol id="history"></ol>
+          </aside>
+        </section>
+
+        <details class="settings panel">
+          <summary>Settings & rules</summary>
+          <div class="settings-grid">
+            <label>
+              Ollama model
+              <input id="model" value="nimble:latest" spellcheck="false" />
+            </label>
+            <label>
+              Auto-run delay
+              <select id="delay">
+                <option value="250">Fast · 0.25 s</option>
+                <option value="750" selected>Normal · 0.75 s</option>
+                <option value="1500">Slow · 1.5 s</option>
+              </select>
+            </label>
+          </div>
+          <div class="rules">
+            <span><b>1</b> xI → xIU</span>
+            <span><b>2</b> Mx → Mxx</span>
+            <span><b>3</b> xIIIy → xUy</span>
+            <span><b>4</b> xUUy → xy</span>
+          </div>
+        </details>
+      </main>
+    </div>
+    <script src="/app.js"></script>
+  </body>
+</html>

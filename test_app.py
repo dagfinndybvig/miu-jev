@@ -1,0 +1,69 @@
+import unittest
+from unittest.mock import patch
+
+from app import choose_move, legal_moves, validate_miu
+
+
+class LegalMovesTests(unittest.TestCase):
+    def test_axiom_moves(self):
+        moves = legal_moves("MI")
+        self.assertEqual(
+            [(move["rule"], move["result"]) for move in moves],
+            [(1, "MIU"), (2, "MII")],
+        )
+
+    def test_all_rules_and_overlapping_occurrences(self):
+        moves = legal_moves("MIIIUU")
+        self.assertEqual(
+            [(move["rule"], move["position"], move["result"]) for move in moves],
+            [
+                (2, 1, "MIIIUUIIIUU"),
+                (3, 1, "MUUU"),
+                (4, 4, "MIII"),
+            ],
+        )
+        overlapping = legal_moves("MIIII")
+        self.assertEqual(
+            [move["position"] for move in overlapping if move["rule"] == 3],
+            [1, 2],
+        )
+
+    def test_rule_four_can_produce_m(self):
+        moves = legal_moves("MUU")
+        self.assertIn((4, "M"), [(move["rule"], move["result"]) for move in moves])
+
+    def test_validation(self):
+        self.assertEqual(validate_miu("MIU", "current"), "MIU")
+        for invalid in ("", "MIX", None, 12):
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(ValueError):
+                    validate_miu(invalid, "current")
+
+
+class SelectionTests(unittest.TestCase):
+    @patch("app.ollama_decision")
+    def test_tournament_considers_more_than_26_moves(self, decide):
+        moves = [
+            {
+                "id": f"move-{index}",
+                "rule": 3,
+                "position": index,
+                "result": f"M{'I' * (index + 1)}",
+                "label": "test",
+                "detail": "test",
+            }
+            for index in range(30)
+        ]
+        decide.side_effect = lambda model, current, goal, history, candidates: (
+            candidates[-1],
+            {candidate["id"]: 1 / len(candidates) for candidate in candidates},
+        )
+        result = choose_move("nimble", "MI", "MU", ["MI"], moves)
+        self.assertEqual(result["move"]["id"], "move-29")
+        self.assertEqual(decide.call_count, 3)
+        self.assertEqual(result["rounds"][0]["contenders"], 30)
+        self.assertEqual(result["rounds"][1]["contenders"], 2)
+
+
+if __name__ == "__main__":
+    unittest.main()
