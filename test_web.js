@@ -832,3 +832,45 @@ test("algebra handles identities and contradictions without applying the MIU inv
     assert.match(app.nodes.get("invariantNotice").textContent, message);
   }
 });
+
+test("custom terms load in lambda mode through the shared equation loader", async () => {
+  const app = await createApp();
+  app.nodes.get("launchLambda").click();
+  await app.movesResponse();
+  assert.equal(app.nodes.get("equationLabel").textContent, "STARTING TERM");
+  assert.equal(app.nodes.get("loadEquation").textContent, "Load term");
+  assert.ok(!app.nodes.get("equationEditor").classList.contains("hidden"));
+  const term = "(λn.λf.λx.(λf.λx.f x) f (n f x)) (λf.λx.f (f x))";
+  app.nodes.get("equation").value = term;
+  app.nodes.get("loadEquation").click();
+  const request = app.requests.shift();
+  assert.equal(request.url, "/api/moves");
+  assert.equal(request.body.system, "lambda");
+  assert.equal(request.body.current, term);
+  request.respond(lambdaState(term));
+  await settle();
+  assert.equal(app.state.system, "lambda");
+  assert.equal(app.state.initial, term);
+  assert.equal(app.state.current, term);
+  assert.equal(app.state.moves.length, 1);
+});
+
+test("an unavailable Ollama stays selectable while TypeSafe without a key is disabled", async () => {
+  const app = await createApp({
+    ollama: { available: false, default_model: "nimble:latest", error: "not running" },
+    typesafe: { available: false, default_model: "jev-latest" },
+  });
+  const options = app.nodes.get("provider").options;
+  assert.equal(options.find((option) => option.value === "ollama").disabled, false);
+  assert.match(options.find((option) => option.value === "ollama").textContent, /unavailable/);
+  assert.equal(options.find((option) => option.value === "typesafe").disabled, true);
+  assert.equal(app.nodes.get("provider").value, "ollama");
+  assert.equal(app.nodes.get("model").value, "nimble:latest");
+  app.nodes.get("provider").value = "typesafe";
+  app.nodes.get("provider").listeners.get("change")();
+  assert.equal(app.nodes.get("model").value, "jev-latest");
+  app.nodes.get("provider").value = "ollama";
+  app.nodes.get("provider").listeners.get("change")();
+  assert.equal(app.nodes.get("model").value, "nimble:latest");
+  assert.match(app.nodes.get("engineStatusText").textContent, /unavailable/);
+});

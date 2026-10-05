@@ -670,7 +670,7 @@ The browser UI provides:
   example fresh. A **Settings** button sits beside the Menu button and opens
   the settings panel;
 - an **Example** menu for MIU, linear equations, and lambda terms;
-- editable starting equations and lambda terms, with **Load equation**;
+- editable starting equations and lambda terms, with **Load equation** / **Load term**;
 - **Request one decision** to evaluate the current menu using the selected policy;
 - **Auto-run** to continue choosing until stopped, stuck, or at the target;
 - configurable auto-run step and state-length budgets;
@@ -734,7 +734,7 @@ addition, 1 + 2, which guided mode reduces to the numeral three in six steps:
 λf.λx.f (f (f x))                                  normal form: three
 ```
 
-Enter any term with **Load equation**. Try the normal-order classic
+Enter any term with **Load term**. Try the normal-order classic
 `(λx.λy.y) ((λx. x x) (λx. x x))`, successor applied to two with
 `(λn.λf.λx. f (n f x)) (λf.λx. f (f x))`, or Ω itself,
 `(λx. x x) (λx. x x)`, which reduces to itself forever and is stopped only

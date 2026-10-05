@@ -100,6 +100,12 @@ function progressDistance() {
   return state.system === "miu" ? targetDistance(state.current, goalValue()) : state.analysis.progress;
 }
 
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  })[char]);
+}
+
 function validMiu(value) {
   return /^[MIU]+$/.test(value);
 }
@@ -398,6 +404,7 @@ function render() {
   elements.currentLabel.textContent = state.system === "algebra" ? "CURRENT EQUATION"
     : state.system === "lambda" ? "CURRENT TERM" : "CURRENT STRING";
   elements.equationLabel.textContent = state.system === "lambda" ? "STARTING TERM" : "STARTING EQUATION";
+  elements.loadEquation.textContent = state.system === "lambda" ? "Load term" : "Load equation";
   elements.metricLabel.textContent = state.system === "algebra" ? "PROGRESS COST"
     : state.system === "lambda" ? "REDEXES" : "#I MOD 3";
   elements.equationEditor.classList.toggle("hidden", !structuredMode);
@@ -436,10 +443,10 @@ function render() {
       button.className = `move${move.id === state.selectedId ? " selected" : ""}`;
       const probability = state.probabilities[move.id];
       button.innerHTML = `
-        <span class="rule-number">${move.rule}</span>
+        <span class="rule-number">${escapeHtml(move.rule)}</span>
         <span class="move-copy">
-          <span class="move-result">${move.result}</span>
-          <span class="move-detail">${move.detail}</span>
+          <span class="move-result">${escapeHtml(move.result)}</span>
+          <span class="move-detail">${escapeHtml(move.detail)}</span>
         </span>
         <span class="probability">${
           probability === undefined ? "" : `${Math.round(probability * 100)}% in group`
@@ -455,8 +462,8 @@ function render() {
   elements.history.replaceChildren();
   for (const entry of state.history) {
     const item = document.createElement("li");
-    item.innerHTML = `<span><span class="history-value">${entry.value}</span>
-      <span class="history-rule">${entry.label}</span></span>`;
+    item.innerHTML = `<span><span class="history-value">${escapeHtml(entry.value)}</span>
+      <span class="history-rule">${escapeHtml(entry.label)}</span></span>`;
     const event = state.events.find((candidate) => candidate.id === entry.eventId);
     if (event) item.append(recordDetails(event));
     elements.history.append(item);
@@ -602,11 +609,14 @@ async function jevStep(runId = null) {
   }
   setError();
   setBusy(true);
+  const maxLength = Math.max(
+    8, Math.min(EXAMPLES[state.system].limit, Number(elements.maxLength.value) || 64),
+  );
   const request = {
     system: requestedSystem, current: requestedCurrent, goal, provider: elements.provider.value,
     model: elements.model.value.trim(), policy: elements.policy.value,
     history: state.history.map((entry) => entry.value),
-    max_length: Math.max(8, Math.min(EXAMPLES[state.system].limit, Number(elements.maxLength.value) || 64)),
+    max_length: maxLength,
   };
   const decision = recordEvent("decision", {
     status: "pending", run_id: runId, request, candidates: state.moves,
@@ -644,7 +654,7 @@ async function jevStep(runId = null) {
       stopAutoRun("state_changed");
       return false;
     }
-    if (payload.move.result.length > Number(elements.maxLength.value)) {
+    if (payload.move.result.length > maxLength) {
       setRunNotice(
         `Model move not applied: the next state would have ${payload.move.result.length} characters.`,
       );
@@ -865,7 +875,9 @@ elements.provider.addEventListener("change", () => {
 });
 elements.model.addEventListener("input", updateEngineStatus);
 elements.example.addEventListener("change", () => loadExample(elements.example.value));
-elements.loadEquation.addEventListener("click", () => loadExample("algebra", elements.equation.value));
+elements.loadEquation.addEventListener("click", () => loadExample(
+  state.system === "miu" ? "algebra" : state.system, elements.equation.value,
+));
 elements.exportLog.addEventListener("click", exportJournal);
 elements.clearLog.addEventListener("click", () => {
   if (state.busy || state.auto) {
@@ -894,7 +906,7 @@ async function boot() {
     state.providers = payload.providers;
     for (const option of elements.provider.options) {
       const provider = state.providers[option.value];
-      option.disabled = !provider?.available;
+      option.disabled = option.value === "typesafe" && !provider?.available;
       if (!provider?.available) option.textContent += " · unavailable";
     }
     elements.provider.value = payload.default_provider;
