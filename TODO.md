@@ -37,6 +37,15 @@ work (5 October 2026), highest value first.
    a semantics preference, not a syntax requirement. Measure whether the
    choice between VP and NP attachment is consistent across sentences, menu
    orders, and providers.
+   Ad-hoc live probe, 5 October 2026 (not checked-in evidence): on
+   `the man saw the dog with the telescope`, both Nimble (local) and Jev
+   (hosted) chose VP attachment in every trial, under both model-only and
+   guided policies. Nimble was bit-identical across trials and chose
+   `VP → V NP` over `NP → NP PP` at 0.93; Jev sampled slightly and committed
+   earlier at 0.50–0.94, sometimes before the PP was even built. Both match
+   the corpus default for instrument PPs, but the sentence is verbatim in
+   every linguistics textbook, so this may measure recall (see item 4).
+   Run it on novel sentences before drawing conclusions.
 8. **Dead-end avoidance.** Curate sentences whose greedy-looking first
    reduction strands a modifier (the `VP → V NP` then `S → NP VP` trap) and
    measure model-only dead-end rates against the chart-completable guided
