@@ -308,6 +308,10 @@ from TypeSafe to Ollama 0.35.0+ or vice versa.
   parse forests run longer than the default 64-character budget, so loading
   the grammar example raises the length budget to its 512-character limit;
   model moves must apply out of the box.
+- Grammar display strips lexical tags client-side (`displayState`: leaves
+  render as bare words, only phrase brackets remain). The tagged forest stays
+  canonical: state strings, server history, `/api` payloads, and the exported
+  journal must always carry the tagged form.
 - Provider availability comes from `/api/health`.
 - Keep Ollama selected by default even when unavailable; hosted requests
   require an explicit provider switch.

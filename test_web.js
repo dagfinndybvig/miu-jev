@@ -1067,3 +1067,22 @@ test("the editor help text follows the selected example", async () => {
   assert.match(app.nodes.get("editorHelp").textContent, /toy fragment's lexicon/);
   assert.doesNotMatch(app.nodes.get("editorHelp").textContent, /One variable x|application is juxtaposition/);
 });
+
+test("grammar states display without lexical tags but keep phrase brackets", async () => {
+  const app = await createApp();
+  app.nodes.get("launchGrammar").click();
+  await app.movesResponse();
+  assert.equal(app.nodes.get("currentString").textContent,
+    "the man saw the dog with the telescope");
+  assert.ok(app.state.current.includes("[Det the]"));
+  app.nodes.get("moves").children[0].click();
+  await app.movesResponse();
+  assert.equal(app.nodes.get("currentString").textContent,
+    "[NP the man] saw the dog with the telescope");
+  assert.match(app.nodes.get("moves").children[0].innerHTML, /\[NP the dog\]/);
+  assert.doesNotMatch(app.nodes.get("moves").children[0].innerHTML, /\[Det the\]/);
+  assert.match(app.nodes.get("history").children[0].innerHTML,
+    /the man saw the dog with the telescope/);
+  assert.doesNotMatch(app.nodes.get("history").children[1].innerHTML, /\[Det the\]/);
+  assert.ok(app.state.events.every((event) => !JSON.stringify(event).includes("[NP the man]")));
+});

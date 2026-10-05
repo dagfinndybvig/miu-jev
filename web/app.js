@@ -109,6 +109,12 @@ function escapeHtml(value) {
   })[char]);
 }
 
+function displayState(value) {
+  return state.system === "grammar"
+    ? value.replace(/\[(?:Det|N|V|P|Conj) ([a-z]+)\]/g, "$1")
+    : value;
+}
+
 function validMiu(value) {
   return /^[MIU]+$/.test(value);
 }
@@ -455,7 +461,7 @@ function render() {
     elements.rules.append(item);
   }
   updateInvariantNotice();
-  elements.current.textContent = state.current;
+  elements.current.textContent = displayState(state.current);
   elements.current.classList.toggle("medium", state.current.length > 18);
   elements.current.classList.toggle("long", state.current.length > 40);
   elements.stepCount.textContent = state.history.length - 1;
@@ -482,7 +488,7 @@ function render() {
       button.innerHTML = `
         <span class="rule-number">${escapeHtml(move.rule)}</span>
         <span class="move-copy">
-          <span class="move-result">${escapeHtml(move.result)}</span>
+          <span class="move-result">${escapeHtml(displayState(move.result))}</span>
           <span class="move-detail">${escapeHtml(move.detail)}</span>
         </span>
         <span class="probability">${
@@ -499,7 +505,7 @@ function render() {
   elements.history.replaceChildren();
   for (const entry of state.history) {
     const item = document.createElement("li");
-    item.innerHTML = `<span><span class="history-value">${escapeHtml(entry.value)}</span>
+    item.innerHTML = `<span><span class="history-value">${escapeHtml(displayState(entry.value))}</span>
       <span class="history-rule">${escapeHtml(entry.label)}</span></span>`;
     const event = state.events.find((candidate) => candidate.id === entry.eventId);
     if (event) item.append(recordDetails(event));

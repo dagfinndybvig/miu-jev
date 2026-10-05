@@ -256,6 +256,11 @@ into the whole forest at its position, for example
 [VP ...] [PP ...]          →  [VP [VP ...] [PP ...]]
 ```
 
+For readability the browser displays states without lexical tags —
+`[NP [Det the] [N man]] [V saw]` renders as `[NP the man] saw` — keeping only
+the phrase-level brackets. The tagged forest remains the canonical format in
+the API, the derivation history sent to the server, and the exported journal.
+
 The word sequence never changes, so every state is a partial parse of the same
 sentence. The goal is a single complete parse: one `S` tree spanning the
 sentence, such as
