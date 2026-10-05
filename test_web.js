@@ -1049,3 +1049,21 @@ test("grammar example loading raises the model-move length budget to its limit",
   assert.equal(decision.status, "applied");
   assert.ok(decision.applied_move.result.length > 64);
 });
+
+test("the editor help text follows the selected example", async () => {
+  const app = await createApp();
+  app.nodes.get("launchAlgebra").click();
+  await app.movesResponse();
+  assert.match(app.nodes.get("editorHelp").textContent, /One variable x/);
+  assert.doesNotMatch(app.nodes.get("editorHelp").textContent, /Lambda|Grammar/);
+  let loading = app.run("loadExample('lambda')");
+  await app.movesResponse();
+  await loading;
+  assert.match(app.nodes.get("editorHelp").textContent, /application is juxtaposition/);
+  assert.doesNotMatch(app.nodes.get("editorHelp").textContent, /One variable x|Grammar/);
+  loading = app.run("loadExample('grammar')");
+  await app.movesResponse();
+  await loading;
+  assert.match(app.nodes.get("editorHelp").textContent, /toy fragment's lexicon/);
+  assert.doesNotMatch(app.nodes.get("editorHelp").textContent, /One variable x|application is juxtaposition/);
+});

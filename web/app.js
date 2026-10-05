@@ -80,6 +80,7 @@ const elements = {
   launchLambda: $("launchLambda"),
   launchGrammar: $("launchGrammar"),
   equationLabel: $("equationLabel"),
+  editorHelp: $("editorHelp"),
   landingNotice: $("landingNotice"),
   appStage: $("appStage"),
   appWorkspace: $("appWorkspace"),
@@ -432,6 +433,13 @@ function render() {
     : state.system === "grammar" ? "STARTING SENTENCE" : "STARTING EQUATION";
   elements.loadEquation.textContent = state.system === "lambda" ? "Load term"
     : state.system === "grammar" ? "Load sentence" : "Load equation";
+  elements.editorHelp.textContent = state.system === "algebra"
+    ? "One variable x, integers, fractions, + - * /, and parentheses. Try 3x + 2 = x + 10 or x/2 + 1 = 3."
+    : state.system === "lambda"
+      ? "Variables a-z, λ (or \\), ., and parentheses; application is juxtaposition, e.g. (\\x. x x) (\\y. y). Try Ω: (\\x. x x) (\\x. x x) — it never reaches a normal form."
+      : state.system === "grammar"
+        ? "Plain words from the toy fragment's lexicon (the, a, man, woman, dog, pizza, park, telescope, saw, found, chased, ate, with, in, near, under, and); up to 16 words. Try the man saw the dog with the telescope."
+        : "";
   elements.metricLabel.textContent = state.system === "algebra" ? "PROGRESS COST"
     : state.system === "lambda" ? "REDEXES"
     : state.system === "grammar" ? "CONSTITUENTS" : "#I MOD 3";
