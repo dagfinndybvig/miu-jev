@@ -305,8 +305,9 @@ from TypeSafe to Ollama 0.35.0+ or vice versa.
 - Grammar uses server solved/parse-count metadata. An empty menu on an
   unsolved grammar state is a dead end: show the stuck notice, keep undo
   available, and never describe it as a proof about the sentence. Grammar
-  parse forests run long; warn users to raise the length budget for
-  auto-run rather than silently failing every model move.
+  parse forests run longer than the default 64-character budget, so loading
+  the grammar example raises the length budget to its 512-character limit;
+  model moves must apply out of the box.
 - Provider availability comes from `/api/health`.
 - Keep Ollama selected by default even when unavailable; hosted requests
   require an explicit provider switch.

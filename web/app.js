@@ -554,7 +554,7 @@ async function loadExample(system, equation = EXAMPLES[system]?.initial) {
     state.selectedId = null;
     elements.goal.value = EXAMPLES[system].goal;
     elements.equation.value = system === "miu" ? EXAMPLES.algebra.initial : initial;
-    elements.maxLength.value = Math.max(8, Math.min(EXAMPLES[system].limit, Number(elements.maxLength.value) || 64));
+    elements.maxLength.value = system === "grammar" ? EXAMPLES.grammar.limit : Math.max(8, Math.min(EXAMPLES[system].limit, Number(elements.maxLength.value) || 64));
     setRunNotice();
     return true;
   } catch (error) {

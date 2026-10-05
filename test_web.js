@@ -89,6 +89,11 @@ function grammarState(value) {
         [3, "[Det the] [N man] [V saw] [NP [Det the] [N dog]] [P with] [Det the] [N telescope]"],
         [6, "[Det the] [N man] [V saw] [Det the] [N dog] [P with] [NP [Det the] [N telescope]]"],
       ] },
+    "[NP [Det the] [N man]] [V saw] [Det the] [N dog] [P with] [Det the] [N telescope]":
+      { progress: 7, parseCount: 2, next: [
+        [3, "[NP [Det the] [N man]] [V saw] [NP [Det the] [N dog]] [P with] [Det the] [N telescope]"],
+        [5, "[NP [Det the] [N man]] [V saw] [Det the] [N dog] [P with] [NP [Det the] [N telescope]]"],
+      ] },
     "[Det the] [N man] [V saw] [NP [Det the] [N dog]] [P with] [Det the] [N telescope]":
       { progress: 7, parseCount: 2, next: [
         [0, "[NP [Det the] [N man]] [V saw] [NP [Det the] [N dog]] [P with] [Det the] [N telescope]"],
@@ -1027,4 +1032,20 @@ test("grammar auto-run reaches a server-verified complete parse", async () => {
   assert.equal(stopped.reason, "target_reached");
   const decisions = app.state.events.filter((event) => event.type === "decision");
   assert.ok(decisions.every((event) => event.request.system === "grammar" && event.status === "applied"));
+});
+
+test("grammar example loading raises the model-move length budget to its limit", async () => {
+  const app = await createApp();
+  assert.equal(app.nodes.get("maxLength").value, "64");
+  app.nodes.get("launchGrammar").click();
+  await app.movesResponse();
+  assert.equal(Number(app.nodes.get("maxLength").value), 512);
+  const step = app.run("jevStep()");
+  await app.decisionResponse(0);
+  await app.fireTimer(450);
+  await app.movesResponse();
+  assert.equal(await step, true);
+  const decision = app.state.events.find((event) => event.type === "decision");
+  assert.equal(decision.status, "applied");
+  assert.ok(decision.applied_move.result.length > 64);
 });

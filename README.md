@@ -289,11 +289,11 @@ sentence, such as
 
 Sentences are at most 16 words; forests are bounded by 512 characters, 256
 syntax nodes, and depth 96. Because a parse forest is longer than the plain
-sentence, the default 64-character model-move budget will stop auto-run
-early; raise **Maximum state length** (up to 512) for grammar auto-run.
-Parsing is decidable, so unlike lambda, a stuck derivation is a dead end of
-that line, not an undecidability result — undo and take a different
-reduction.
+sentence, loading the grammar example raises the model-move length budget to
+its 512-character limit automatically; lower it deliberately if you want
+tighter budgets. Parsing is decidable, so unlike lambda, a stuck derivation is
+a dead end of that line, not an undecidability result — undo and take a
+different reduction.
 
 ## MIU × Jev
 
@@ -825,10 +825,9 @@ the chart-counted total. Enter any sentence of up to 16 lexicon words with
 **Load sentence**; try `the man and the dog saw the pizza` for coordination,
 `the dog chased the man in the park` for another attachment pair, or
 `the man saw` to watch a derivation dead-end with no legal reduction left.
-Undo recovers, and guided mode keeps every step chart-completable. Raise
-**Maximum state length** to 512 before auto-run, since parse forests are
-longer than the plain sentence and the default 64-character budget stops
-early. Manual moves work without either provider.
+Undo recovers, and guided mode keeps every step chart-completable. Loading the
+example raises the model-move length budget to 512 automatically, so
+auto-run works out of the box. Manual moves work without either provider.
 
 ## Architecture
 
