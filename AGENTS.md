@@ -193,10 +193,13 @@ Important details:
 Both providers receive the same state:
 
 - current state;
-- target string or algebra goal;
+- target string or the system's fixed goal (`Isolate x`, `Normal form`,
+  or `Complete parse`);
 - recent derivation;
 - the candidate legal moves; and
-- domain context: MIU's modulo-three invariant or algebra solution preservation.
+- domain context: MIU's modulo-three invariant, algebra solution-set
+  preservation, lambda capture-avoiding substitution, or grammar yield
+  preservation.
 
 They return a choice and probabilities. Keep provider-specific behavior behind
 `decision_request`.
@@ -300,8 +303,9 @@ from TypeSafe to Ollama 0.35.0+ or vice versa.
   the active state. Algebra reset uses the loaded initial equation.
 - Bind asynchronous menus and decisions to system as well as revision/current.
   Disable example switching and equation loading during decisions and auto-run.
-- Algebra and lambda use server solved/progress metadata, not edit distance or
-  modulo three. Keep identities and contradictions distinct from failure.
+- Algebra, lambda, and grammar use server solved/progress metadata, not edit
+  distance or modulo three. Keep identities and contradictions distinct from
+  failure.
 - Grammar uses server solved/parse-count metadata. An empty menu on an
   unsolved grammar state is a dead end: show the stuck notice, keep undo
   available, and never describe it as a proof about the sentence. Grammar

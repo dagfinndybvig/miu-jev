@@ -777,7 +777,8 @@ The browser UI provides:
 - editable MIU target, model, and auto-run speed settings.
 
 Changing examples starts a new derivation but keeps provider/model settings
-and the shared decision log. Algebra reset returns to the last loaded equation;
+and the shared decision log. Algebra reset returns to the last loaded equation,
+lambda to the loaded term, grammar to the loaded sentence;
 MIU reset returns to `MI`. Switching and loading are disabled during a decision
 or auto-run. Invalid equations leave the active derivation unchanged.
 
@@ -1256,6 +1257,7 @@ informed by the current state, target,
 recent derivation, and move descriptions.
 
 For MIU, the project contrasts step-by-step model judgment with an invariant
-that settles the impossible `MU` target. Algebra and lambda instead supply
-reachable problems with different valid reductions. All three are experiments in constrained
+that settles the impossible `MU` target. Algebra and lambda supply reachable
+problems with different valid reductions; grammar adds problems with several
+equally-legal answers and local moves that can dead-end. All four are experiments in constrained
 step selection, not evidence that a model improves on deterministic methods.

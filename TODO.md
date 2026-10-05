@@ -1,6 +1,7 @@
 # TODO
 
-Open threads from the lambda benchmark work (2 October 2026), highest value first.
+Open threads from the lambda benchmark work (2 October 2026) and the grammar
+work (5 October 2026), highest value first.
 
 ## Benchmark experiments
 
@@ -23,8 +24,21 @@ Open threads from the lambda benchmark work (2 October 2026), highest value firs
 
 ## Lower priority
 
-5. **Algebra benchmark mode.** `--system` supports miu and lambda; algebra has
-   no controlled comparison yet.
+5. **Algebra and grammar benchmark modes.** `--system` supports miu and lambda;
+   algebra and grammar have no controlled comparison yet.
 6. **Stateless-model caveat.** The models never learn within a session; keep
    this stated wherever results are interpreted (the "child who already
    learned" limitation).
+
+## Grammar experiments
+
+7. **Attachment-preference probe.** Ambiguous sentences have several complete
+   parses and every one is a solved state; which one a model steers toward is
+   a semantics preference, not a syntax requirement. Measure whether the
+   choice between VP and NP attachment is consistent across sentences, menu
+   orders, and providers.
+8. **Dead-end avoidance.** Curate sentences whose greedy-looking first
+   reduction strands a modifier (the `VP → V NP` then `S → NP VP` trap) and
+   measure model-only dead-end rates against the chart-completable guided
+   policy and `reference_parse`. Large coordination sentences would also give
+   menus big enough to stress the 26-choice tournament path.
