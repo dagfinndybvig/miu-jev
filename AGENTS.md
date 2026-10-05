@@ -4,11 +4,12 @@ Guidance for coding agents and contributors working on Formalism × Jev.
 
 ## Project in one paragraph
 
-Formalism × Jev is a dependency-free Python web app with a shared menu for three
+Formalism × Jev is a dependency-free Python web app with a shared menu for four
 formal systems: exact single-variable algebra, untyped lambda-calculus beta
-reduction, and Hofstadter's MIU system. The Python engines generate all
-MIU rewrites, a finite declared algebra vocabulary, or every lambda beta redex
-at every position.
+reduction, bottom-up parsing of a toy English grammar fragment, and
+Hofstadter's MIU system. The Python engines generate all
+MIU rewrites, a finite declared algebra vocabulary, every lambda beta redex
+at every position, or every legal reduction of adjacent constituents.
 A decision provider—local Ollama 0.35.0+/Nimble by default, or hosted
 TypeSafe/Jev when configured—may choose only from that generated menu. The
 model supplies strategy; deterministic code supplies validity.
@@ -29,7 +30,7 @@ python app.py
 python -m unittest -v
 
 # Syntax checks
-python -m py_compile app.py algebra.py lambda_calc.py test_app.py test_algebra.py test_lambda_calc.py benchmark.py test_benchmark.py
+python -m py_compile app.py algebra.py lambda_calc.py grammar.py test_app.py test_algebra.py test_lambda_calc.py test_grammar.py benchmark.py test_benchmark.py
 node --check web\app.js
 node --test test_web.js
 ```
@@ -43,8 +44,10 @@ Python package dependencies and no frontend build step.
 app.py          MIU rules, system routing, provider clients, HTTP API, static file server
 algebra.py      exact linear-equation parser, rewrite menu, and guidance
 lambda_calc.py exact lambda-term parser, beta redex menus, and guidance
+grammar.py     toy-fragment forest parser, reduction menus, chart, and guidance
 test_algebra.py exact equivalence, limits, policies, and shared-provider tests
 test_lambda_calc.py lambda substitution, menus, limits, and policy tests
+test_grammar.py grammar menus, yields, ambiguity, dead ends, and policies
 test_app.py     unit tests for rules, provider limits, and configuration
 test_web.js     browser-state regression tests using Node.js built-ins
 benchmark.py    controlled baseline/provider comparisons and reference paths
@@ -152,6 +155,39 @@ Important details:
 - Use the same provider transport, tournaments, and evidence format as MIU and
   algebra, with lambda-specific prompts and selection heuristics.
 
+## Grammar invariants
+
+- Use the bounded forest parser in `grammar.py`; never `eval` or a
+  provider-generated tree. States are bracketed parse forests
+  (`[Det the] [N man]`, `[NP [Det the] [N man]]`) over a fixed toy lexicon;
+  a plain starting sentence is also accepted and expands to leaf constituents.
+  Sentences are at most 16 words; forests are bounded by 512 characters,
+  256 syntax nodes, and depth 96.
+- A move's result is the combined constituent spliced back into the whole
+  forest at its marked position. Never return the bare combination.
+- The word sequence (yield) never changes. Every offered move must preserve
+  the yield exactly and round-trip through parsing/formatting.
+- Every offered move is one grammar production applied to adjacent
+  constituents at a server-marked position. Different positions are different
+  legal moves even when they produce the same result. The server performs the
+  splice; the provider only names a reduction.
+- Goal recognition is server-owned: a single complete parse, meaning the whole
+  forest is one `S` constituent. A state with no moves and no complete parse is
+  a dead end of that derivation line (undo recovers); it is not a proof about
+  the sentence.
+- Ambiguity is reported, not resolved: `describe` chart-counts the complete
+  parses of the sentence (`parse_count`, capped at 999). Two parses of the same
+  sentence are both solved states.
+- Candidate construction belongs inside the limit-catching path: count omitted
+  unrepresentable reductions without discarding the valid remainder of the menu.
+- Grammar guidance prefers in-budget, a completed parse, unvisited results,
+  then chart-completable reductions, then fewer constituents, with model
+  probabilities. `reference_parse` is the chart-guided witness. The
+  model-only policy must remain available and can dead-end; that contrast is
+  the experiment.
+- Use the same provider transport, tournaments, and evidence format as the
+  other systems, with grammar-specific prompts and selection heuristics.
+
 ## Provider contract
 
 Both providers receive the same state:
@@ -231,11 +267,13 @@ headers.
 - `POST /api/choose` accepts `current`, `goal`, `provider`, `model`, `policy`
   (defaulting to `model`), and
   `history`; it recomputes moves before asking the provider.
-- Both POST endpoints accept `system` (`miu` by default, `algebra`, or
-  `lambda`).
+- Both POST endpoints accept `system` (`miu` by default, `algebra`,
+  `lambda`, or `grammar`).
   Algebra returns normalized equations and server analysis. Its only goal is
   `Isolate x`, and its `max_length` range is 8–512. Lambda returns normalized
   terms with redex counts; its only goal is `Normal form`, with the same range.
+  Grammar returns normalized parse forests with chart-counted `parse_count`;
+  its only goal is `Complete parse`, with the same range.
   Preserve omitted-system MIU
   compatibility.
 
@@ -246,8 +284,9 @@ from TypeSafe to Ollama 0.35.0+ or vice versa.
 
 ## Frontend gotchas
 
-- The app opens on a landing page offering Algebra × Jev (the main feature) and
-  MIU × Jev (the historical inspiration). Launching uses the same loadExample
+- The app opens on a landing page offering Algebra × Jev (the main feature),
+  Lambda × Jev, Grammar × Jev, and MIU × Jev (the historical inspiration).
+  Launching uses the same loadExample
   path as the example selector; the launch buttons and example switching stay
   disabled while a launch or decision is pending, and the app views stay
   hidden until a launch succeeds. The header Menu button and Choose application
@@ -263,6 +302,11 @@ from TypeSafe to Ollama 0.35.0+ or vice versa.
   Disable example switching and equation loading during decisions and auto-run.
 - Algebra and lambda use server solved/progress metadata, not edit distance or
   modulo three. Keep identities and contradictions distinct from failure.
+- Grammar uses server solved/parse-count metadata. An empty menu on an
+  unsolved grammar state is a dead end: show the stuck notice, keep undo
+  available, and never describe it as a proof about the sentence. Grammar
+  parse forests run long; warn users to raise the length budget for
+  auto-run rather than silently failing every model move.
 - Provider availability comes from `/api/health`.
 - Keep Ollama selected by default even when unavailable; hosted requests
   require an explicit provider switch.
@@ -303,6 +347,7 @@ Add or update tests when changing:
 - any MIU rule or occurrence-scanning behavior;
 - algebra parsing, rewrite equivalence, representation limits, or goal detection;
 - lambda parsing, capture-avoiding substitution, redex menus, or normal-form detection;
+- grammar parsing, yield preservation, reduction menus, dead ends, or parse counting;
 - launching from, returning to, or resuming out of the landing page;
 - switching examples, loading equations, or cross-example journal behavior;
 - provider selection or limits;
@@ -318,14 +363,15 @@ At minimum, run:
 
 ```powershell
 python -m unittest -v
-python -m py_compile app.py algebra.py lambda_calc.py test_app.py test_algebra.py test_lambda_calc.py benchmark.py test_benchmark.py
+python -m py_compile app.py algebra.py lambda_calc.py grammar.py test_app.py test_algebra.py test_lambda_calc.py test_grammar.py benchmark.py test_benchmark.py
 node --check web\app.js
 node --test test_web.js
 ```
 
 For provider changes, also perform one live `/api/choose` request for each
-configured provider, covering both examples when shared routing changes.
-Use harmless MIU states or sample algebra equations only. Never place a real key in a
+configured provider, covering each system's example when shared routing changes.
+Use harmless MIU states, sample algebra equations, or toy-fragment sentences
+only. Never place a real key in a
 command, test fixture, source file, log, or commit.
 
 `python benchmark.py --output baseline-results.json` runs MIU-only keyless baselines.

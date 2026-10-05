@@ -17,6 +17,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 import algebra
+import grammar
 import lambda_calc
 
 
@@ -34,7 +35,7 @@ MAX_MIU_LENGTH = 8_192
 MAX_HISTORY_ENTRIES = 1_024
 CHOICE_KEYS = string.ascii_uppercase
 PROVIDER_CHOICE_LIMITS = {"ollama": len(CHOICE_KEYS), "typesafe": 255}
-SYSTEMS = ("miu", "algebra", "lambda")
+SYSTEMS = ("miu", "algebra", "lambda", "grammar")
 
 
 def validate_system(value: Any) -> str:
@@ -186,6 +187,9 @@ def validate_history(history: list[str], system: str) -> None:
     elif system == "lambda":
         for item in history:
             lambda_calc.parse_term(item)
+    elif system == "grammar":
+        for item in history:
+            grammar.parse_state(item)
     else:
         for item in history:
             validate_miu(item, "history")
@@ -357,7 +361,11 @@ def decision_request(
             f"position: {move['position']}; justification: {move['detail']}; "
             f"solved: {move['solved']}; structural progress cost: {move['progress']}; "
             + (f"duplication cost: {move['duplication']}; redexes after: {move['redexes']}; "
-               if system == "lambda" else "")
+               if system == "lambda" else
+               f"constituents after: {move['progress']}; "
+               f"keeps a complete parse reachable: "
+               f"{'yes' if move['completable'] else 'no'}; "
+               if system == "grammar" else "")
         )
         criteria[key] = (
             f"{move['label']}; result: {move['result']}; "
@@ -435,8 +443,33 @@ def decision_request(
             "Choose the supplied beta contraction that most directly progresses "
             "toward the normal-form goal. Do not invent a term or a transformation."
         )
+    elif system == "grammar":
+        state = {
+            "formal_system": "Constituency parsing of a toy English fragment",
+            "current_parse": current, "goal": goal,
+            "recent_derivation": history[-12:], "candidate_moves": criteria,
+            "invariant": (
+                "Every candidate combines adjacent constituents with one grammar "
+                "production, so the word sequence never changes and the tree is "
+                "server-owned. A complete parse is a single S constituent."
+            ),
+            "search_guidance": (
+                "Prefer reductions that keep a complete parse reachable; a greedy "
+                "local reduction can strand a modifier with no legal move left. The "
+                "sentence may have several equally-legal complete parses "
+                "(attachment ambiguity); choosing among them is semantics, not "
+                "syntax. Do not invent a constituent or a production."
+            ),
+        }
+        instructions = (
+            "Choose the reduction that best progresses toward a single complete "
+            "S parse. Do not invent a constituent or a production."
+        )
     if not hints:
-        current_key = {"miu": "current_string", "algebra": "current_equation", "lambda": "current_term"}[system]
+        current_key = {
+            "miu": "current_string", "algebra": "current_equation",
+            "lambda": "current_term", "grammar": "current_parse",
+        }[system]
         state = {
             "formal_system": "A formal rewrite system",
             current_key: current,
@@ -533,6 +566,7 @@ def decision_request(
     selector = (
         select_move if system == "miu"
         else algebra.select_move if system == "algebra"
+        else grammar.select_move if system == "grammar"
         else lambda_calc.select_move
     )
     selected = selector(
@@ -698,6 +732,9 @@ class RequestHandler(BaseHTTPRequestHandler):
                 if system == "lambda":
                     self.send_json(lambda_calc.describe(payload.get("current")))
                     return
+                if system == "grammar":
+                    self.send_json(grammar.describe(payload.get("current")))
+                    return
                 current = validate_miu(payload.get("current"), "current")
                 self.send_json({"system": system, "current": current, "moves": legal_moves(current)})
                 return
@@ -715,6 +752,13 @@ class RequestHandler(BaseHTTPRequestHandler):
                     goal = payload.get("goal", lambda_calc.GOAL)
                     if goal != lambda_calc.GOAL:
                         raise ValueError(f"Lambda goal must be {lambda_calc.GOAL}")
+                    moves = analysis["moves"]
+                elif system == "grammar":
+                    analysis = grammar.describe(payload.get("current"))
+                    current = analysis["current"]
+                    goal = payload.get("goal", grammar.GOAL)
+                    if goal != grammar.GOAL:
+                        raise ValueError(f"Grammar goal must be {grammar.GOAL}")
                     moves = analysis["moves"]
                 else:
                     current = validate_miu(payload.get("current"), "current")
@@ -734,6 +778,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                     "miu": MAX_MIU_LENGTH,
                     "algebra": algebra.MAX_LENGTH,
                     "lambda": lambda_calc.MAX_CHARS,
+                    "grammar": grammar.MAX_CHARS,
                 }[system]
                 if not isinstance(model, str) or not model.strip():
                     raise ValueError("model must be a non-empty string")

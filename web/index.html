@@ -63,6 +63,17 @@
               </ul>
               <span class="landing-cta">Reduce a term</span>
             </button>
+            <button class="landing-card" id="launchGrammar">
+              <span class="landing-kicker">AMBIGUITY &amp; DEAD ENDS</span>
+              <span class="landing-title">Grammar × Jev</span>
+              <ul>
+                <li>Parse a toy English fragment bottom-up; the menu lists every legal reduction of adjacent constituents.</li>
+                <li>The server owns the tree; the model only names a reduction. The word sequence never changes.</li>
+                <li>Attachment ambiguity: "the man saw the dog with the telescope" has two complete parses — choosing among them is semantics, not syntax.</li>
+                <li>Greed dead-ends: reduce the wrong pair and a modifier dangles with no legal move. Guided mode uses a chart parser to stay completable.</li>
+              </ul>
+              <span class="landing-cta">Parse a sentence</span>
+            </button>
             <button class="landing-card" id="launchMiu">
               <span class="landing-kicker">HISTORICAL INSPIRATION</span>
               <span class="landing-title">MIU × Jev</span>
@@ -75,7 +86,7 @@
             </button>
           </div>
           <p class="journal-help landing-note">
-            Both applications share the same decision provider, controls, and
+            All four applications share the same decision provider, controls, and
             decision log. Switch between them at any time from the Example menu.
           </p>
           <div class="landing-resume hidden" id="landingResume">
@@ -92,6 +103,7 @@
               <option value="miu">MIU · the MU puzzle</option>
               <option value="algebra">Algebra · solve a linear equation</option>
               <option value="lambda">Lambda · beta-reduce a term</option>
+              <option value="grammar">Grammar · parse a sentence</option>
             </select>
             <button id="chooseApp">Choose application</button>
             </div>
@@ -101,7 +113,7 @@
             <label for="equation" id="equationLabel">STARTING EQUATION</label>
             <input id="equation" value="2(x + 3) = 14" maxlength="512" spellcheck="false" />
             <button id="loadEquation">Load equation</button>
-            <p class="journal-help">Algebra: one variable x, integers, fractions, + - * /, and parentheses; examples: 3x + 2 = x + 10; x/2 + 1 = 3. Lambda: variables a-z, λ (or \), ., and parentheses; application is juxtaposition, e.g. (\x. x x) (\y. y). Try Ω: (\x. x x) (\x. x x) — it never reaches a normal form.</p>
+            <p class="journal-help">Algebra: one variable x, integers, fractions, + - * /, and parentheses; examples: 3x + 2 = x + 10; x/2 + 1 = 3. Lambda: variables a-z, λ (or \), ., and parentheses; application is juxtaposition, e.g. (\x. x x) (\y. y). Try Ω: (\x. x x) (\x. x x) — it never reaches a normal form. Grammar: plain words from the toy fragment's lexicon (the, a, man, woman, dog, pizza, park, telescope, saw, found, chased, ate, with, in, near, under, and), e.g. the man saw the dog with the telescope; up to 16 words.</p>
           </div>
           <div class="stage-top">
             <div>
@@ -168,7 +180,7 @@
             </div>
           </div>
           <p class="journal-help">
-            Both examples' decisions, manual moves, rejected choices, and stop reasons are saved in this
+            Every example's decisions, manual moves, rejected choices, and stop reasons are saved in this
             browser, including across undo, reset, and reload. Export for a portable record.
             Group probabilities are conditional on that group, not global confidence.
             Explanations describe deterministic policy rules, not the model's private reasoning.

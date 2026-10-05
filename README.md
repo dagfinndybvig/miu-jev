@@ -5,10 +5,11 @@
 **Formalism × Jev** is an experiment in constrained machine choice. A formal
 engine generates the complete menu of legal moves, a decision model evaluates
 that menu, and deterministic code executes the selection and records every
-step. The same provider, controls, and decision log drive three formal
+step. The same provider, controls, and decision log drive four formal
 systems:
 **Algebra × Jev**, exact single-variable linear algebra over the rationals,
-**Lambda × Jev**, beta reduction of untyped lambda terms, and
+**Lambda × Jev**, beta reduction of untyped lambda terms,
+**Grammar × Jev**, bottom-up parsing of a toy English fragment, and
 and **MIU × Jev**, Hofstadter's MU puzzle - the latter mostly included for historical inspiration. **Guided** mode uses heuristics with
 model-assisted ranking; **Model only** (the default) preserves the provider's choice,
 subject to execution limits. Local **Ollama 0.35.0 or later** with Nimble is
@@ -26,8 +27,9 @@ That is the whole philosophy. Any formal system with a computable, finite menu
 of legal moves admits the same division of labor: deterministic code owns
 soundness, the model contributes judgment among legal alternatives, and a
 complete trace keeps the boundary inspectable. Algebra is where this pattern
-does real work, lambda is where model choice finally becomes strategy, and
-MIU is where it began.
+does real work, lambda is where model choice finally becomes strategy, grammar
+is where several legal answers exist and choosing among them is semantics,
+and MIU is where it began.
 
 A first measured result, in plain terms: when we ran the same experiment on
 lambda calculus — the tiny formal system underneath programming languages —
@@ -74,7 +76,8 @@ python app.py
 
 Open <http://127.0.0.1:8765>. The app starts on its landing page: choose
 **Algebra × Jev** (the simple example), **Lambda × Jev** (the strategy test),
-or **MIU × Jev** (the historical inspiration). Use **Settings & rules** to switch providers.
+**Grammar × Jev** (ambiguity and dead ends), or
+**MIU × Jev** (the historical inspiration). Use **Settings & rules** to switch providers.
 The browser never receives either provider's credentials.
 Ollama remains selected even when it is unavailable and a TypeSafe key is
 configured. Hosted decisions require an explicit switch to TypeSafe; there is
@@ -221,6 +224,76 @@ contemporary decision model inside the oldest formal model of computation.
 - Representation limits are 512 characters, 256 syntax nodes, and depth at
   most 96. Contractions exceeding the bounds are omitted and counted; the
   separate model-move length budget still defaults to 64 characters.
+
+## Grammar × Jev
+
+Grammar is the first system in the app with several equally-legal answers.
+
+### What it is
+
+A small, fixed toy fragment of English syntax. The lexicon contains
+`the, a, man, woman, dog, pizza, park, telescope, saw, found, chased, ate,
+with, in, near, under, and`; the grammar has seven productions:
+
+```text
+S  → NP VP          NP → Det N         NP → NP PP
+NP → NP Conj NP     VP → V NP          VP → VP PP
+PP → P NP
+```
+
+A state is a **parse forest**: a sequence of bracketed trees whose leaves are
+the sentence's words, so `the man saw the dog with the telescope` starts as
+
+```text
+[Det the] [N man] [V saw] [Det the] [N dog] [P with] [Det the] [N telescope]
+```
+
+A legal move combines adjacent constituents with one production, spliced back
+into the whole forest at its position, for example
+
+```text
+[Det the] [N man] ...      →  [NP [Det the] [N man]] ...
+[VP ...] [PP ...]          →  [VP [VP ...] [PP ...]]
+```
+
+The word sequence never changes, so every state is a partial parse of the same
+sentence. The goal is a single complete parse: one `S` tree spanning the
+sentence, such as
+
+```text
+[S [NP [Det the] [N man]] [VP [V saw] [NP [NP [Det the] [N dog]] [PP [P with] [NP [Det the] [N telescope]]]]]]]
+```
+
+### Why it is different from the other systems
+
+- **Ambiguity.** MIU has one target, algebra one solution set, lambda a unique
+  normal form. *The man saw the dog with the telescope* has **two** complete
+  parses: the PP can attach to the VP (the man used the telescope) or to the
+  object NP (the dog had it). Both are legal; only semantics can choose. The
+  server chart-counts complete parses and reports the total. A model's
+  preference between equally-legal parses is the purest judgment call the app
+  offers.
+- **Dead ends.** Legality is local, so a greedy reduction can strand a
+  modifier: reduce `VP → V NP` and then `S → NP VP` while the PP is still
+  dangling and no production applies. The menu becomes empty with the goal
+  unreached. The reference witness (`reference_parse`) always takes a
+  chart-verified completable reduction, so it reaches a parse whenever one
+  exists; **guided** mode applies the same chart filter, while **model only**
+  keeps the raw choice and can dead-end — that contrast is the experiment.
+- **Server-owned trees.** The provider never sees or builds a string it can
+  alter: it only names a reduction from the menu, and the engine splices the
+  new tree. Every move round-trips through the forest parser and preserves
+  the yield exactly.
+
+### Limits
+
+Sentences are at most 16 words; forests are bounded by 512 characters, 256
+syntax nodes, and depth 96. Because a parse forest is longer than the plain
+sentence, the default 64-character model-move budget will stop auto-run
+early; raise **Maximum state length** (up to 512) for grammar auto-run.
+Parsing is decidable, so unlike lambda, a stuck derivation is a dead end of
+that line, not an undecidability result — undo and take a different
+reduction.
 
 ## MIU × Jev
 
@@ -660,7 +733,8 @@ whether the model's strategy is useful.
 The browser UI provides:
 
 - a **landing page** that opens on launch and offers **Algebra × Jev** as the
-  simple example, **Lambda × Jev** as the strategy test, and **MIU × Jev** as
+  simple example, **Lambda × Jev** as the strategy test, **Grammar × Jev**
+  as the ambiguity and dead-end test, and **MIU × Jev** as
   the historical inspiration, with highlights from this README; a launch
   starts the selected example, and the Example menu
   switches between them at any time. The header **Menu** button and the
@@ -669,8 +743,9 @@ The browser UI provides:
   **Continue the current derivation** resumes it; choosing a card starts that
   example fresh. A **Settings** button sits beside the Menu button and opens
   the settings panel;
-- an **Example** menu for MIU, linear equations, and lambda terms;
-- editable starting equations and lambda terms, with **Load equation** / **Load term**;
+- an **Example** menu for MIU, linear equations, lambda terms, and sentences;
+- editable starting equations, lambda terms, and sentences, with
+  **Load equation** / **Load term** / **Load sentence**;
 - **Request one decision** to evaluate the current menu using the selected policy;
 - **Auto-run** to continue choosing until stopped, stuck, or at the target;
 - configurable auto-run step and state-length budgets;
@@ -740,6 +815,21 @@ Enter any term with **Load term**. Try the normal-order classic
 `(λx. x x) (λx. x x)`, which reduces to itself forever and is stopped only
 by budgets. Manual moves work without either provider.
 
+### Grammar example
+
+Select **Grammar · parse a sentence**. The fragment, its productions, and its
+guidance are described in [Grammar × Jev](#grammar--jev). The default example
+is the attachment-ambiguity classic, `the man saw the dog with the
+telescope`, which has exactly two complete parses; the notice line reports
+the chart-counted total. Enter any sentence of up to 16 lexicon words with
+**Load sentence**; try `the man and the dog saw the pizza` for coordination,
+`the dog chased the man in the park` for another attachment pair, or
+`the man saw` to watch a derivation dead-end with no legal reduction left.
+Undo recovers, and guided mode keeps every step chart-completable. Raise
+**Maximum state length** to 512 before auto-run, since parse forests are
+longer than the plain sentence and the default 64-character budget stops
+early. Manual moves work without either provider.
+
 ## Architecture
 
 The project intentionally has no package dependencies or frontend build step.
@@ -748,6 +838,7 @@ The project intentionally has no package dependencies or frontend build step.
 app.py          HTTP server, MIU engine, system routing, validation, provider clients
 algebra.py      exact linear-equation parser, rewrites, and guidance
 lambda_calc.py exact lambda-term parser, beta redex menus, and guidance
+grammar.py     toy-fragment forest parser, reduction menus, chart, and guidance
 web/
   index.html    application structure
   styles.css    responsive interface
@@ -755,6 +846,7 @@ web/
 test_app.py     rule-engine and selection tests
 test_algebra.py algebra equivalence, limits, policies, and provider tests
 test_lambda_calc.py lambda substitution, menus, limits, and policy tests
+test_grammar.py grammar menus, yields, ambiguity, dead ends, and policies
 test_web.js     browser-state regression tests (Node.js built-ins)
 benchmark.py    controlled comparisons with bounded reference paths
 test_benchmark.py benchmark generation, safety, and measurement tests
@@ -772,7 +864,7 @@ The provider boundary is also server-side:
 browser
    │ current state + provider name
    ▼
-Python MIU / algebra engine
+Python formal engines
    │ enumerates and validates legal moves
    ├──► Ollama 0.35.0+ /v1/systemone ──► local Nimble
    └──► TypeSafe /v1/systemone ► hosted Jev
@@ -781,15 +873,17 @@ Python MIU / algebra engine
 Both providers receive the same semantic state and choice descriptions. Their
 different option limits are handled by the server, so neither formal engine
 needs provider-specific logic. Algebra prompts describe equations and
-solution-set preservation; MIU prompts retain their own rules and invariant.
+solution-set preservation; MIU prompts retain their own rules and invariant;
+grammar prompts state that every candidate is a server-validated reduction of
+the same sentence.
 Provider responses must select a supplied move and contain finite probabilities
 between zero and one when probabilities are supplied. Malformed responses are
 reported as upstream errors rather than forwarded as invalid JSON.
 
 ### HTTP example selection
 
-`POST /api/moves` and `POST /api/choose` accept `system: "miu"`, `system: "algebra"`, or
-`system: "lambda"`. Omission defaults to MIU for existing callers. Both
+`POST /api/moves` and `POST /api/choose` accept `system: "miu"`, `system: "algebra"`,
+`system: "lambda"`, or `system: "grammar"`. Omission defaults to MIU for existing callers. Both
 recompute moves from `current`; a client-supplied menu is never authoritative.
 
 For example, `/api/moves` accepts:
@@ -804,8 +898,11 @@ It returns normalized `current`, `moves`, `solved`, `progress`, `solution_kind`,
 The algebra `goal` must be `"Isolate x"` or omitted. Its `max_length` range
 is 8–512. The lambda `goal` must be `"Normal form"` or omitted, with the
 same 8–512 range; its analysis adds `redexes` counts and per-move duplication
-costs. Decision responses include `system` and an `analysis` object describing
-the input equation or term. Each algebra move also reports its result's `solved` and
+costs. The grammar `goal` must be `"Complete parse"` or omitted, with the
+same 8–512 range; its analysis adds the chart-counted `parse_count` (and
+`parse_count_capped`) for the sentence, and each move reports whether it
+keeps a complete parse reachable. Decision responses include `system` and an `analysis` object describing
+the input equation, term, or sentence. Each algebra move also reports its result's `solved` and
 `progress` values. `/api/health` remains shared provider metadata.
 
 ### Decision records and local persistence
@@ -991,7 +1088,7 @@ python app.py --host 127.0.0.1 --port 9000
 
 ```powershell
 python -m unittest -v
-python -m py_compile app.py algebra.py lambda_calc.py test_app.py test_algebra.py test_lambda_calc.py benchmark.py test_benchmark.py
+python -m py_compile app.py algebra.py lambda_calc.py grammar.py test_app.py test_algebra.py test_lambda_calc.py test_grammar.py benchmark.py test_benchmark.py
 node --check web\app.js
 node --test test_web.js
 ```
@@ -1014,7 +1111,7 @@ Node.js is not required to run the app.
 ## Controlled strategy comparisons
 
 The benchmark runner defaults to **MIU**; its measurements do not evaluate
-algebra strategies. `--system lambda` selects a lambda pool instead.
+algebra or grammar strategies. `--system lambda` selects a lambda pool instead.
 
 Run the random and heuristic-only baselines without any model calls:
 

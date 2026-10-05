@@ -8,6 +8,7 @@ from http.server import ThreadingHTTPServer
 from unittest.mock import patch
 
 import algebra
+import grammar
 import lambda_calc
 
 from app import (
@@ -517,6 +518,51 @@ class HttpApiTests(unittest.TestCase):
         self.assertFalse(payload["analysis"]["solved"])
         decide.assert_not_called()
 
+    def test_grammar_moves_normalize_and_report_goal_state(self):
+        status, payload = self.request("POST", "/api/moves", {
+            "system": "grammar", "current": grammar.DEFAULT_SENTENCE,
+        })
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["system"], "grammar")
+        self.assertEqual(
+            payload["current"],
+            "[Det the] [N man] [V saw] [Det the] [N dog] [P with] [Det the] [N telescope]",
+        )
+        self.assertFalse(payload["solved"])
+        self.assertEqual(payload["parse_count"], 2)
+        self.assertEqual(payload["solution_kind"], "incomplete")
+        self.assertEqual([move["position"] for move in payload["moves"]], [0, 3, 6])
+        solved = ("[S [NP [Det the] [N man]] "
+                  "[VP [V saw] [NP [Det the] [N dog]]]]")
+        status, payload = self.request("POST", "/api/moves", {
+            "system": "grammar", "current": solved,
+        })
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["solved"])
+        self.assertEqual(payload["solution_kind"], "parsed")
+        self.assertEqual(payload["moves"], [])
+
+    def test_grammar_choose_recomputes_equivalent_moves(self):
+        current = "[NP [Det the] [N dog]] [V saw] [NP [Det the] [N pizza]]"
+        with patch("app.decision_request") as decide:
+            status, payload = self.request("POST", "/api/choose", {
+                "system": "grammar", "current": current,
+                "moves": [{"id": "move-0", "result": "[S nope]"}],
+                "history": [current],
+            })
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["system"], "grammar")
+        self.assertEqual(payload["goal"], grammar.GOAL)
+        self.assertEqual(payload["policy"], "model")
+        self.assertEqual(
+            payload["move"]["result"],
+            "[NP [Det the] [N dog]] [VP [V saw] [NP [Det the] [N pizza]]]",
+        )
+        self.assertNotIn("[S nope]", [move["result"] for move in payload["moves"]])
+        self.assertEqual(len(payload["moves"]), 1)
+        self.assertFalse(payload["analysis"]["solved"])
+        decide.assert_not_called()
+
     @patch("app.decision_request")
     def test_invalid_systems_and_algebra_inputs_are_bad_requests(self, decide):
         for body in (
@@ -531,6 +577,12 @@ class HttpApiTests(unittest.TestCase):
             {"system": "lambda", "current": "λx"},
             {"system": "lambda", "current": "(λx.x) y", "goal": "x"},
             {"system": "lambda", "current": "λx.x", "history": ["λx.x", "x+1"]},
+            {"system": "grammar", "current": "the man saw the unicorn"},
+            {"system": "grammar", "current": "the [N dog]"},
+            {"system": "grammar", "current": grammar.DEFAULT_SENTENCE, "goal": "Parse it"},
+            {"system": "grammar", "current": grammar.DEFAULT_SENTENCE, "max_length": 513},
+            {"system": "grammar", "current": grammar.DEFAULT_SENTENCE,
+             "history": [grammar.DEFAULT_SENTENCE, "[S nope]"]},
         ):
             with self.subTest(body=body):
                 status, payload = self.request("POST", "/api/choose", body)

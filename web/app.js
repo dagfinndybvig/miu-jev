@@ -26,6 +26,7 @@ const EXAMPLES = {
   miu: { title: "MIU", initial: "MI", goal: "MU", limit: SERVER_MAX_LENGTH },
   algebra: { title: "Algebra", initial: "2 * (x + 3) = 14", goal: "Isolate x", limit: 512 },
   lambda: { title: "Lambda", initial: "(\\m.\\n.\\f.\\x. m f (n f x)) (\\f.\\x. f x) (\\f.\\x. f (f x))", goal: "Normal form", limit: 512 },
+  grammar: { title: "Grammar", initial: "the man saw the dog with the telescope", goal: "Complete parse", limit: 512 },
 };
 
 const $ = (id) => document.getElementById(id);
@@ -77,6 +78,7 @@ const elements = {
   launchAlgebra: $("launchAlgebra"),
   launchMiu: $("launchMiu"),
   launchLambda: $("launchLambda"),
+  launchGrammar: $("launchGrammar"),
   equationLabel: $("equationLabel"),
   landingNotice: $("landingNotice"),
   appStage: $("appStage"),
@@ -308,6 +310,26 @@ function exportJournal() {
 }
 
 function updateInvariantNotice() {
+  if (state.system === "grammar") {
+    const count = state.analysis?.parse_count;
+    const omitted = state.analysis?.omitted_for_limits || 0;
+    const status = state.analysis?.solved
+      ? `Complete parse: a single S constituent spans the whole sentence.` +
+        (count > 1 ? ` This is one of ${count} equally-legal complete parses.` : "")
+      : "Each offered step combines adjacent constituents with one grammar production; " +
+        "the word sequence never changes.";
+    const ambiguity = !state.analysis?.solved && count === 1
+      ? " This sentence has exactly one complete parse."
+      : !state.analysis?.solved && count > 1
+        ? ` This sentence has ${count} equally-legal complete parses; choosing among them is semantics, not syntax.`
+        : "";
+    const stuck = !state.analysis?.solved && state.moves.length === 0
+      ? " This derivation line is stuck: no legal reduction remains. Undo and choose a different reduction."
+      : "";
+    elements.invariantNotice.textContent = status + ambiguity + stuck +
+      (omitted ? ` ${omitted} reductions exceed the representation limits and are not offered.` : "");
+    return;
+  }
   if (state.system === "lambda") {
     const status = state.analysis?.solved
       ? "Normal form: no beta redexes remain in the term."
@@ -368,6 +390,8 @@ function setBusy(busy) {
   const solvedState = state.system !== "miu" && goalReached();
   elements.jevStep.disabled = busy || state.auto || unavailable || solvedState || state.moves.length === 0;
   elements.launchAlgebra.disabled = busy || state.auto;
+  elements.launchLambda.disabled = busy || state.auto;
+  elements.launchGrammar.disabled = busy || state.auto;
   elements.launchMiu.disabled = busy || state.auto;
   elements.chooseApp.disabled = busy || state.auto;
   elements.homeButton.disabled = busy || state.auto;
@@ -402,11 +426,15 @@ function render() {
   elements.example.value = state.system;
   elements.exampleTitle.textContent = state.onLanding ? "Formalism" : EXAMPLES[state.system].title;
   elements.currentLabel.textContent = state.system === "algebra" ? "CURRENT EQUATION"
-    : state.system === "lambda" ? "CURRENT TERM" : "CURRENT STRING";
-  elements.equationLabel.textContent = state.system === "lambda" ? "STARTING TERM" : "STARTING EQUATION";
-  elements.loadEquation.textContent = state.system === "lambda" ? "Load term" : "Load equation";
+    : state.system === "lambda" ? "CURRENT TERM"
+    : state.system === "grammar" ? "CURRENT PARSE" : "CURRENT STRING";
+  elements.equationLabel.textContent = state.system === "lambda" ? "STARTING TERM"
+    : state.system === "grammar" ? "STARTING SENTENCE" : "STARTING EQUATION";
+  elements.loadEquation.textContent = state.system === "lambda" ? "Load term"
+    : state.system === "grammar" ? "Load sentence" : "Load equation";
   elements.metricLabel.textContent = state.system === "algebra" ? "PROGRESS COST"
-    : state.system === "lambda" ? "REDEXES" : "#I MOD 3";
+    : state.system === "lambda" ? "REDEXES"
+    : state.system === "grammar" ? "CONSTITUENTS" : "#I MOD 3";
   elements.equationEditor.classList.toggle("hidden", !structuredMode);
   elements.exploreSetting.classList.toggle("hidden", structuredMode);
   elements.maxLength.max = EXAMPLES[state.system].limit;
@@ -426,6 +454,7 @@ function render() {
   elements.lengthCount.textContent = state.current.length;
   elements.moveCount.textContent = state.moves.length;
   elements.iModulo.textContent = state.system === "algebra" ? state.analysis?.progress ?? "—"
+    : state.system === "grammar" ? state.analysis?.progress ?? "—"
     : state.system === "lambda" ? state.analysis?.redexes ?? "—" :
     [...state.current].filter((char) => char === "I").length % 3;
   elements.autoRun.textContent = state.auto ? "Stop auto-run" : "Auto-run";
@@ -831,6 +860,7 @@ async function launchApp(system) {
 elements.launchAlgebra.addEventListener("click", () => launchApp("algebra"));
 elements.launchMiu.addEventListener("click", () => launchApp("miu"));
 elements.launchLambda.addEventListener("click", () => launchApp("lambda"));
+elements.launchGrammar.addEventListener("click", () => launchApp("grammar"));
 function openSettings() {
   if (state.busy || state.auto) return;
   elements.appSettings.open = true;

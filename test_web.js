@@ -76,6 +76,82 @@ function lambdaState(value) {
   };
 }
 
+function grammarState(value) {
+  const aliases = {
+    "the man saw the dog with the telescope": "[Det the] [N man] [V saw] [Det the] [N dog] [P with] [Det the] [N telescope]",
+    "the dog saw the pizza": "[Det the] [N dog] [V saw] [Det the] [N pizza]",
+  };
+  const current = aliases[value] || value;
+  const fixtures = {
+    "[Det the] [N man] [V saw] [Det the] [N dog] [P with] [Det the] [N telescope]":
+      { progress: 8, parseCount: 2, next: [
+        [0, "[NP [Det the] [N man]] [V saw] [Det the] [N dog] [P with] [Det the] [N telescope]"],
+        [3, "[Det the] [N man] [V saw] [NP [Det the] [N dog]] [P with] [Det the] [N telescope]"],
+        [6, "[Det the] [N man] [V saw] [Det the] [N dog] [P with] [NP [Det the] [N telescope]]"],
+      ] },
+    "[Det the] [N man] [V saw] [NP [Det the] [N dog]] [P with] [Det the] [N telescope]":
+      { progress: 7, parseCount: 2, next: [
+        [0, "[NP [Det the] [N man]] [V saw] [NP [Det the] [N dog]] [P with] [Det the] [N telescope]"],
+        [5, "[Det the] [N man] [V saw] [NP [Det the] [N dog]] [P with] [NP [Det the] [N telescope]]"],
+      ] },
+    "[NP [Det the] [N man]] [V saw] [NP [Det the] [N dog]] [P with] [Det the] [N telescope]":
+      { progress: 6, parseCount: 2, next: [
+        [1, "[NP [Det the] [N man]] [VP [V saw] [NP [Det the] [N dog]]] [P with] [Det the] [N telescope]"],
+        [5, "[NP [Det the] [N man]] [V saw] [NP [Det the] [N dog]] [P with] [NP [Det the] [N telescope]]"],
+      ] },
+    "[NP [Det the] [N man]] [V saw] [NP [Det the] [N dog]] [P with] [NP [Det the] [N telescope]]":
+      { progress: 5, parseCount: 2, next: [
+        [1, "[NP [Det the] [N man]] [VP [V saw] [NP [Det the] [N dog]]] [P with] [NP [Det the] [N telescope]]"],
+        [2, "[NP [Det the] [N man]] [V saw] [NP [NP [Det the] [N dog]] [PP [P with] [NP [Det the] [N telescope]]]]"],
+        [4, "[NP [Det the] [N man]] [V saw] [NP [Det the] [N dog]] [PP [P with] [NP [Det the] [N telescope]]]"],
+      ] },
+    "[NP [Det the] [N man]] [V saw] [NP [Det the] [N dog]] [PP [P with] [NP [Det the] [N telescope]]]":
+      { progress: 4, parseCount: 2, next: [
+        [1, "[NP [Det the] [N man]] [VP [V saw] [NP [Det the] [N dog]]] [PP [P with] [NP [Det the] [N telescope]]]"],
+      ] },
+    "[NP [Det the] [N man]] [VP [V saw] [NP [Det the] [N dog]]] [PP [P with] [NP [Det the] [N telescope]]]":
+      { progress: 3, parseCount: 2, next: [
+        [0, "[S [NP [Det the] [N man]] [VP [V saw] [NP [Det the] [N dog]]]] [PP [P with] [NP [Det the] [N telescope]]]"],
+        [1, "[NP [Det the] [N man]] [VP [VP [V saw] [NP [Det the] [N dog]]] [PP [P with] [NP [Det the] [N telescope]]]]"],
+      ] },
+    "[S [NP [Det the] [N man]] [VP [V saw] [NP [Det the] [N dog]]]] [PP [P with] [NP [Det the] [N telescope]]]":
+      { progress: 2, parseCount: 2, next: [] },
+    "[Det the] [N dog] [V saw] [Det the] [N pizza]":
+      { progress: 5, parseCount: 1, next: [
+        [0, "[NP [Det the] [N dog]] [V saw] [Det the] [N pizza]"],
+        [3, "[Det the] [N dog] [V saw] [NP [Det the] [N pizza]]"],
+      ] },
+    "[NP [Det the] [N dog]] [V saw] [Det the] [N pizza]":
+      { progress: 4, parseCount: 1, next: [
+        [2, "[NP [Det the] [N dog]] [V saw] [NP [Det the] [N pizza]]"],
+      ] },
+    "[NP [Det the] [N dog]] [V saw] [NP [Det the] [N pizza]]":
+      { progress: 3, parseCount: 1, next: [
+        [1, "[NP [Det the] [N dog]] [VP [V saw] [NP [Det the] [N pizza]]]"],
+      ] },
+    "[NP [Det the] [N dog]] [VP [V saw] [NP [Det the] [N pizza]]]":
+      { progress: 2, parseCount: 1, next: [
+        [0, "[S [NP [Det the] [N dog]] [VP [V saw] [NP [Det the] [N pizza]]]]"],
+      ] },
+    "[S [NP [Det the] [N dog]] [VP [V saw] [NP [Det the] [N pizza]]]]":
+      { progress: 1, parseCount: 1, solved: true, next: [] },
+  };
+  const fixture = fixtures[current];
+  assert.ok(fixture, `Missing grammar fixture for ${current}`);
+  const solved = fixture.solved || false;
+  return {
+    system: "grammar", current, progress: fixture.progress, solved,
+    parse_count: fixture.parseCount, parse_count_capped: false,
+    solution_kind: solved ? "parsed" : "incomplete", omitted_for_limits: 0,
+    rules: ["1: Combine adjacent constituents with one grammar production"],
+    moves: fixture.next.map(([position, result], index) => ({
+      id: `move-${index}`, rule: 1, position, result,
+      label: `Reduce at ${position}`, detail: "Combine adjacent constituents.",
+      solved: false, progress: fixture.progress - 1, completable: true,
+    })),
+  };
+}
+
 function element() {
   const classes = new Set();
   const listeners = new Map();
@@ -156,6 +232,7 @@ async function createApp(healthProviders = providers, storage = new Map()) {
       assert.equal(request.url, "/api/moves");
       request.respond(request.body.system === "algebra" ? algebraState(request.body.current) :
         request.body.system === "lambda" ? lambdaState(request.body.current) :
+        request.body.system === "grammar" ? grammarState(request.body.current) :
         { system: "miu", current: request.body.current, moves: legalMenu(request.body.current) });
       await settle();
     },
@@ -170,6 +247,7 @@ async function createApp(healthProviders = providers, storage = new Map()) {
       assert.equal(request.url, "/api/choose");
       const snapshot = request.body.system === "algebra" ? algebraState(request.body.current) :
         request.body.system === "lambda" ? lambdaState(request.body.current) :
+        request.body.system === "grammar" ? grammarState(request.body.current) :
         { system: "miu", current: request.body.current, moves: legalMenu(request.body.current) };
       const { moves, ...analysis } = snapshot;
       request.respond({
@@ -873,4 +951,80 @@ test("an unavailable Ollama stays selectable while TypeSafe without a key is dis
   app.nodes.get("provider").listeners.get("change")();
   assert.equal(app.nodes.get("model").value, "nimble:latest");
   assert.match(app.nodes.get("engineStatusText").textContent, /unavailable/);
+});
+
+test("landing page launches grammar with the attachment-ambiguity example", async () => {
+  const app = await createApp();
+  app.nodes.get("launchGrammar").click();
+  await app.movesResponse();
+  assert.equal(app.state.launched, true);
+  assert.equal(app.state.system, "grammar");
+  assert.equal(app.state.current,
+    "[Det the] [N man] [V saw] [Det the] [N dog] [P with] [Det the] [N telescope]");
+  assert.equal(app.nodes.get("exampleTitle").textContent, "Grammar");
+  assert.equal(app.nodes.get("currentLabel").textContent, "CURRENT PARSE");
+  assert.equal(app.nodes.get("equationLabel").textContent, "STARTING SENTENCE");
+  assert.equal(app.nodes.get("loadEquation").textContent, "Load sentence");
+  assert.equal(app.nodes.get("invariantMetricLabel").textContent, "CONSTITUENTS");
+  assert.equal(app.nodes.get("iModulo").textContent, 8);
+  assert.match(app.nodes.get("invariantNotice").textContent, /2 equally-legal complete parses/);
+  assert.equal(app.state.moves.length, 3);
+});
+
+test("grammar manual reductions build a complete parse and reset returns to the sentence", async () => {
+  const app = await createApp();
+  const loading = app.run("loadExample('grammar', 'the dog saw the pizza')");
+  await app.movesResponse();
+  await loading;
+  assert.equal(app.state.initial, "[Det the] [N dog] [V saw] [Det the] [N pizza]");
+  for (let step = 0; step < 4; step += 1) {
+    app.nodes.get("moves").children[0].click();
+    await app.movesResponse();
+  }
+  assert.equal(app.state.analysis.solved, true);
+  assert.equal(app.state.current,
+    "[S [NP [Det the] [N dog]] [VP [V saw] [NP [Det the] [N pizza]]]]");
+  assert.match(app.nodes.get("invariantNotice").textContent, /Complete parse/);
+  assert.match(app.nodes.get("moves").children[0].textContent, /No legal rewrites/);
+  app.nodes.get("reset").click();
+  await app.movesResponse();
+  assert.equal(app.state.current, "[Det the] [N dog] [V saw] [Det the] [N pizza]");
+});
+
+test("grammar greedy reductions dead-end with no legal move left", async () => {
+  const app = await createApp();
+  app.nodes.get("launchGrammar").click();
+  await app.movesResponse();
+  for (const index of [1, 0, 1, 2, 0, 0]) {
+    app.nodes.get("moves").children[index].click();
+    await app.movesResponse();
+  }
+  assert.equal(app.state.analysis.solved, false);
+  assert.equal(app.state.moves.length, 0);
+  assert.match(app.nodes.get("moves").children[0].textContent, /No legal rewrites/);
+  assert.match(app.nodes.get("invariantNotice").textContent, /stuck/);
+  app.nodes.get("undo").click();
+  await app.movesResponse();
+  assert.equal(app.state.moves.length, 2);
+});
+
+test("grammar auto-run reaches a server-verified complete parse", async () => {
+  const app = await createApp();
+  const loading = app.run("loadExample('grammar', 'the dog saw the pizza')");
+  await app.movesResponse();
+  await loading;
+  app.nodes.get("maxLength").value = "512";
+  app.nodes.get("maxSteps").value = "8";
+  const run = app.run("autoRun()");
+  for (let step = 0; step < 3; step += 1) {
+    await app.completeDecision(0);
+    await app.fireTimer(750);
+  }
+  await app.completeDecision(0);
+  await run;
+  assert.equal(app.state.analysis.solved, true);
+  const stopped = app.state.events.find((event) => event.type === "run_stopped");
+  assert.equal(stopped.reason, "target_reached");
+  const decisions = app.state.events.filter((event) => event.type === "decision");
+  assert.ok(decisions.every((event) => event.request.system === "grammar" && event.status === "applied"));
 });
