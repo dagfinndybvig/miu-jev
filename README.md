@@ -866,6 +866,7 @@ benchmark-results-algebra.json measured algebra comparison sample
 benchmark-results-grammar.json measured grammar comparison sample
 benchmark-results-grammar-attachment-fixed.json measured novel-sentence attachment reference (fixed order)
 benchmark-results-grammar-attachment-shuffled.json measured novel-sentence attachment sample (shuffled menus)
+benchmark-results-lambda-novel.json measured novel-term comparison sample
 ```
 
 The Python server is stateless with respect to a run. The browser sends the
@@ -1411,6 +1412,30 @@ honest: the compositions reuse the toy lexicon, so a general
 instrumental-PP prior cannot be excluded — a semantics claim this
 experiment cannot and need not settle. The stateless caveat applies: fresh
 selections, not learning.
+
+### Measured novel-term sample: 6 October 2026
+
+The checked-in [novel-term report](benchmark-results-lambda-novel.json)
+holds 84 trials: two seeded novel compositions and two curated
+Church-arithmetic terms plus the standard trap, growth, and Ω set, both
+providers, repeats 2, max-steps 14 (so every novel reference path fits the
+budget; a 12-step pilot failed a 13-step term identically in every arm — a
+budget artifact worth remembering when comparing success rates).
+Reproduce it:
+
+```powershell
+python benchmark.py --system lambda --novel-terms 2 --targets 6 --providers ollama typesafe --repeats 2 --max-steps 14 --output lambda-novel.json
+```
+
+**No whole-term recall advantage visible.** Every arm — both providers,
+model-only and guided, and both baselines — solved both novel and curated
+terms at 100%, at exactly the normal-order reference steps (the random
+baseline needed +2 excess steps on the novel pair). Both providers reduced
+seeded compositions no textbook prints as efficiently as canonical Church
+arithmetic, so the perfect curated scores are not explained by verbatim
+recall of whole terms. The honest caveat: novel terms recombine the same
+combinators, so recall of subpatterns cannot be excluded. The stateless
+caveat applies: fresh selections, not learning.
 
 ## Scope
 

@@ -63,6 +63,7 @@ benchmark-results-algebra.json measured algebra comparison sample
 benchmark-results-grammar.json measured grammar comparison sample
 benchmark-results-grammar-attachment-fixed.json measured novel-sentence attachment reference (fixed order)
 benchmark-results-grammar-attachment-shuffled.json measured novel-sentence attachment sample (shuffled menus)
+benchmark-results-lambda-novel.json measured novel-term comparison sample
 web/index.html  page structure and settings
 web/styles.css  responsive presentation
 web/app.js      browser state, API calls, controls, and rendering

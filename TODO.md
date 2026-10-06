@@ -1,7 +1,9 @@
 # TODO
 
-Open threads from the lambda benchmark work (2 October 2026) and the grammar
-work (5 October 2026), highest value first.
+Experiment threads from the lambda benchmark work (2 October 2026) and the
+grammar work (5 October 2026). All eight were implemented and measured on
+6 October 2026; each entry records its checked-in evidence. Highest value
+first.
 
 ## Benchmark experiments
 
@@ -52,8 +54,12 @@ work (5 October 2026), highest value first.
    applications, constant wrappers — each verified to normalize within the
    reference-step bound and distinct from the curated pool. Canonical Church
    arithmetic is plausibly verbatim in training corpora, so curated cases may
-   measure recall. Remaining: run the novel pool against both providers and
-   compare against the curated reachable success rates.
+   measure recall. Measured 6 October 2026 (checked-in novel report, both
+   providers, repeats 2, max-steps 14): every arm solved both novel and
+   curated terms at 100% at exactly the reference steps, so no whole-term
+   recall advantage is visible; subpattern recall (the same combinators,
+   recombined) cannot be excluded. A 12-step pilot failed a 13-step novel
+   term identically in every arm — a budget artifact, not a strategy signal.
 
 ## Lower priority
 
