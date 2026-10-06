@@ -277,6 +277,59 @@ class BenchmarkTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Unknown menu order"):
             run_trial(case, "model", 5, 2, 32, 4, "ollama", "nimble", menu_order="rotated")
 
+    def test_wrong_hint_arm_annotates_only_diverging_self_loops(self):
+        term, _ = next(pair for pair in benchmark.lambda_terms() if pair[1] == "trap")
+        case = {
+            "term": term, "goal": "λy.y", "kind": "trap",
+            "reference_steps": 2, "witness": [],
+        }
+        captured = []
+
+        def fake_choose(provider, model, policy, current, goal, history, moves,
+                        max_length, system="miu", hints=True):
+            captured.append(moves)
+            return {"move": moves[0], "rounds": [], "provider_calls": 0,
+                    "override_count": 0}
+
+        with patch("benchmark.choose_move", side_effect=fake_choose):
+            trial = run_trial(case, "model", 1, 1, 512, 4, "ollama", "nimble",
+                              system="lambda", wrong_hint=True)
+
+        self.assertTrue(trial["wrong_hint"])
+        entry = trial["evidence"][0]
+        current = entry["current"]
+        annotated = [move for move in captured[0] if move["result"] == current]
+        self.assertEqual(len(annotated), 1)
+        self.assertTrue(annotated[0]["label"].endswith("· recommended"))
+        self.assertEqual(annotated[0]["detail"], benchmark.WRONG_HINT_RECOMMENDATION)
+        self.assertEqual(entry["wrong_hint"], [annotated[0]["id"]])
+        others = [move for move in captured[0] if move["result"] != current]
+        self.assertEqual(len(others), 1)
+        self.assertNotIn("recommended", others[0]["label"])
+        self.assertNotIn("recommend", others[0]["detail"])
+
+    def test_wrong_hint_is_a_lambda_only_flag(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "results.json"
+            rejected = subprocess.run(
+                [sys.executable, str(Path(__file__).with_name("benchmark.py")),
+                 "--wrong-hint", "--output", str(output)],
+                capture_output=True, text=True, timeout=60,
+            )
+            process = subprocess.run(
+                [sys.executable, str(Path(__file__).with_name("benchmark.py")),
+                 "--system", "lambda", "--targets", "3", "--repeats", "1",
+                 "--wrong-hint", "--output", str(output)],
+                capture_output=True, text=True, timeout=60, check=True,
+            )
+            report = json.loads(output.read_text(encoding="utf-8"))
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn("--wrong-hint", rejected.stderr)
+        self.assertTrue(report["configuration"]["wrong_hint"])
+        self.assertEqual(
+            {row["strategy"] for row in report["trials"]}, {"random", "heuristic"},
+        )
+
     def test_cli_records_menu_order_configuration(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "results.json"

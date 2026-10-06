@@ -24,6 +24,10 @@ from app import (
 
 OMEGA = r"(\x. x x) (\x. x x)"
 OMEGA_ATOM = rf"({OMEGA})"
+WRONG_HINT_RECOMMENDATION = (
+    "The computed guidance recommends this contraction as the most direct "
+    "progress toward the normal form."
+)
 LAMBDA_ADD = r"(\m.\n.\f.\x. m f (n f x))"
 LAMBDA_MUL = r"(\m.\n.\f. m (n f))"
 LAMBDA_SUCC = r"(\n.\f.\x. f (n f x))"
@@ -274,6 +278,7 @@ def run_trial(
     max_length: int, stagnation_limit: int,
     provider: str | None = None, model: str | None = None,
     system: str = "miu", hints: bool = True, menu_order: str = "fixed",
+    wrong_hint: bool = False,
 ) -> dict[str, Any]:
     if strategy not in ("random", "heuristic", "model", "guided"):
         raise ValueError("Unknown strategy")
@@ -311,6 +316,15 @@ def run_trial(
         evidence.append(entry)
         if strategy in ("model", "guided"):
             presented = present_menu(moves, menu_order, seed, current)
+            if wrong_hint:
+                recommended = []
+                for move in presented:
+                    if move["result"] == current:
+                        recommended.append(move["id"])
+                        move["label"] = f"{move['label']} · recommended"
+                        move["detail"] = WRONG_HINT_RECOMMENDATION
+                if recommended:
+                    entry["wrong_hint"] = recommended
             entry["presented"] = [move["id"] for move in presented]
             try:
                 decision = choose_move(
@@ -382,6 +396,7 @@ def run_trial(
         "goal": case["goal"], "kind": case["kind"], "strategy": strategy,
         "provider": provider, "model": model, "seed": seed,
         "system": system, "hints": hints, "menu_order": menu_order,
+        "wrong_hint": wrong_hint,
         "outcome": outcome, "success": outcome == "found",
         "steps": len(history) - 1, "history": history,
         "reference_steps": case["reference_steps"],
@@ -451,6 +466,12 @@ def main() -> None:
     parser.add_argument("--bfs-states", type=int, default=10000)
     parser.add_argument("--hint-ablation", action="store_true")
     parser.add_argument(
+        "--wrong-hint", action="store_true",
+        help="lambda only: adds provider arms whose hint-on menus annotate "
+             "diverging self-loop contractions as recommended, measuring "
+             "deference to guidance versus judgment",
+    )
+    parser.add_argument(
         "--menu-order", choices=("fixed", "reversed", "shuffled"), default="fixed",
         help="permute provider-facing menus to control position bias; "
              "baselines always use the fixed server order",
@@ -478,6 +499,8 @@ def main() -> None:
             "--novel-terms requires --system lambda, a non-negative count, "
             "and at most targets - 2 terms"
         )
+    if args.wrong_hint and args.system != "lambda":
+        parser.error("--wrong-hint requires --system lambda")
     for provider in args.providers:
         if provider == "ollama":
             require_compatible_ollama()
@@ -492,21 +515,23 @@ def main() -> None:
             args.seed, args.targets, novel=args.novel_terms,
         )
 
-    strategies: list[tuple[str, str, str | None, str | None, bool]] = [
-        ("random", "random", None, None, True),
-        ("heuristic", "heuristic", None, None, True),
+    strategies: list[tuple[str, str, str | None, str | None, bool, bool]] = [
+        ("random", "random", None, None, True, False),
+        ("heuristic", "heuristic", None, None, True, False),
     ]
     for provider in dict.fromkeys(args.providers):
         for policy in ("model", "guided"):
             model = getattr(args, f"{provider}_model")
-            strategies.append((policy, policy, provider, model, True))
+            strategies.append((policy, policy, provider, model, True, False))
             if args.hint_ablation:
-                strategies.append((f"{policy}-nohints", policy, provider, model, False))
+                strategies.append((f"{policy}-nohints", policy, provider, model, False, False))
+            if args.wrong_hint:
+                strategies.append((f"{policy}-wronghint", policy, provider, model, True, True))
 
     schedule = [
-        (case, repeat, label, policy, provider, model, hints)
+        (case, repeat, label, policy, provider, model, hints, wrong_hint)
         for case in cases for repeat in range(args.repeats)
-        for label, policy, provider, model, hints in strategies
+        for label, policy, provider, model, hints, wrong_hint in strategies
     ]
     random.Random(args.seed).shuffle(schedule)
     root = Path(__file__).resolve().parent
@@ -530,17 +555,21 @@ def main() -> None:
                     "The menu-order arm permutes provider-facing menus "
                     "(reversed, or a per-state seeded shuffle); "
                     "baselines always use the fixed server order. "
+                    "Wrong-hint arms annotate diverging self-loop contractions "
+                    "as recommended in hint-on menus; the annotation changes "
+                    "descriptive text only, never legality. "
                     "Latency excludes UI delays and includes provider/version-check overhead.",
         },
         "reference": reference, "cases": cases, "trials": [], "summary": [],
         "completed": False,
     }
-    for index, (case, repeat, label, policy, provider, model, hints) in enumerate(schedule, 1):
+    for index, (case, repeat, label, policy, provider, model, hints, wrong_hint) in enumerate(schedule, 1):
         trial = run_trial(
             case, policy, args.seed + repeat, args.max_steps,
             args.max_length, args.stagnation_limit, provider, model,
             args.system, hints,
             args.menu_order if policy in ("model", "guided") else "fixed",
+            wrong_hint if policy in ("model", "guided") else False,
         )
         trial["strategy"] = label
         trial["repeat"] = repeat + 1
