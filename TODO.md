@@ -59,9 +59,12 @@ work (5 October 2026), highest value first.
 
 5. **Algebra and grammar benchmark modes.** `--system` supports miu and lambda;
    algebra and grammar have no controlled comparison yet.
-6. **Stateless-model caveat.** The models never learn within a session; keep
-   this stated wherever results are interpreted (the "child who already
-   learned" limitation).
+6. **Stateless-model caveat.** Done 6 October 2026: the caveat is stated
+   in the README's controlled-comparisons intro and its measured-sample
+   sections — providers never learn within or across sessions, so every
+   result is fresh selection, not learning.
+   The child-who-already-learned limitation is stated wherever results are
+   interpreted; it is a caveat, not something a benchmark can measure away.
 
 ## Grammar experiments
 

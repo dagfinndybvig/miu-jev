@@ -1123,6 +1123,12 @@ Node.js is not required to run the app.
 The benchmark runner defaults to **MIU**; its measurements do not evaluate
 algebra or grammar strategies. `--system lambda` selects a lambda pool instead.
 
+One caveat applies to every number in this section and to all measured
+samples below: **the providers are stateless across trials.** Neither model
+learns within a session or between runs — the child-who-already-learned
+limitation — so any difference from the baselines is fresh selection over a
+fixed menu, never learning.
+
 Run the random and heuristic-only baselines without any model calls:
 
 ```powershell
@@ -1231,7 +1237,9 @@ cannot establish an advantage. Different raw choices were often overridden.
 This is a small, exploratory sample with only two repetitions, changing model
 aliases, and machine/network-dependent timings: it is not evidence of
 statistical superiority or equivalence. Broader target sets and repeated
-measurements are necessary before making stronger claims.
+measurements are necessary before making stronger claims. The stateless
+caveat applies here too: both providers decide fresh on every trial and
+never learn, so no result above shows training or adaptation.
 
 ### Measured lambda sample: 2 October 2026
 
@@ -1259,7 +1267,8 @@ tournaments are untested; and on these terms the winning redex is always the
 first menu entry, so first-option bias cannot be excluded from the report
 alone. A separate ad-hoc live probe that reversed the menu order — presenting
 the Ω redex first — had both models pick the trap-escaping contraction every
-time, but that probe is not part of this checked-in evidence.
+time, but that probe is not part of this checked-in evidence. The stateless caveat
+applies throughout: every choice is a fresh selection, never learning.
 
 ### Measured menu-order sample: 6 October 2026
 
@@ -1285,6 +1294,7 @@ for both policies; Nimble diverged in 1/6 guided and 2/6 model-only trials
 without changing any outcome. The earlier ad-hoc reversed-menu probe is now
 reproduced by checked-in evidence. Menus still never exceed three options, so
 the arm stays blunt until tournament-stressing terms land (TODO item 3).
+The stateless caveat applies: these are fresh selections, not learning.
 
 ### Measured wrong-hint sample: 6 October 2026
 
@@ -1307,6 +1317,7 @@ annotation demonstrably reached the providers (the evidence records the
 exercise judgment over the teacher here, so the textbook-versus-exercises
 distinction rests on recall, not deference. Caveat: one trap shape and one
 bad hint; a curriculum of wrong hints over novel terms would sharpen it.
+The stateless caveat applies: these are fresh selections, not learning.
 
 ### Measured tournament sample: 6 October 2026
 
@@ -1335,7 +1346,8 @@ practice on Ollama 0.35.1 — recorded as provider errors, never silently
 replaced. The hosted endpoint accepted the ~75KB hard-term request and
 rejected a ~117KB one during pool calibration, which sized the compact soft
 term. Random baselines confirm the majority loses (2/6 found); the
-heuristic baseline takes the discard (6/6, 2.0 steps).
+heuristic baseline takes the discard (6/6, 2.0 steps). The stateless caveat
+applies: these are fresh selections, not learning.
 
 ## Scope
 
