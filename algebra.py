@@ -419,6 +419,31 @@ def describe(value: str) -> dict[str, Any]:
     }
 
 
+def reference_solution(
+    value: str, max_steps: int = 100,
+) -> tuple[list[dict[str, Any]], str | None]:
+    """Greedy guided witness: repeatedly apply the guided policy with zero
+    provider probability until the equation is solved (an isolated x, or a
+    numeric identity/contradiction). Returns the applied path and the solved
+    equation (None if the budget ran out, meaning the finite vocabulary did
+    not admit a guided solution in budget, not that none exists)."""
+    path: list[dict[str, Any]] = []
+    state = describe(value)
+    history = [state["current"]]
+    while not state["solved"] and len(path) < max_steps:
+        moves = state["moves"]
+        if not moves:
+            break
+        move = select_move(
+            "guided", state["current"], GOAL, history, moves, moves[0],
+            {}, MAX_LENGTH,
+        )
+        path.append({"current": state["current"], "move": move})
+        state = describe(move["result"])
+        history.append(state["current"])
+    return path, (state["current"] if state["solved"] else None)
+
+
 def select_move(
     policy: str, current: str, goal: str, history: list[str],
     candidates: list[dict[str, Any]], model_choice: dict[str, Any],

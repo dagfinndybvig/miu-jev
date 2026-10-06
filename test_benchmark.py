@@ -9,9 +9,12 @@ from unittest.mock import patch
 
 from app import DecisionError, legal_moves
 import benchmark
+import algebra
+import grammar
 import lambda_calc
 from benchmark import (
-    generate_cases, generate_lambda_cases, novel_lambda_terms, run_trial,
+    generate_algebra_cases, generate_cases, generate_grammar_cases,
+    generate_lambda_cases, novel_lambda_terms, run_trial,
     summarize, target_distance,
 )
 
@@ -237,6 +240,100 @@ class BenchmarkTests(unittest.TestCase):
         self.assertTrue(any(row["kind"] == "novel" for row in report["trials"]))
         self.assertNotEqual(rejected.returncode, 0)
         self.assertIn("--novel-terms", rejected.stderr)
+
+    def test_algebra_cases_are_reproducible_with_legal_guided_witnesses(self):
+        first = generate_algebra_cases(123, 4)
+        self.assertEqual(first, generate_algebra_cases(123, 4))
+        cases, reference = first
+        self.assertEqual(len(cases), 4)
+        self.assertEqual(
+            sorted(case["kind"] for case in cases),
+            ["contradiction", "identity", "reachable", "reachable"],
+        )
+        for case in cases:
+            current = algebra.describe(case["equation"])["current"]
+            self.assertGreaterEqual(case["reference_steps"], 1)
+            for step in case["witness"]:
+                self.assertEqual(step["current"], current)
+                self.assertIn(step["move"], algebra.describe(current)["moves"])
+                current = step["move"]["result"]
+            self.assertTrue(algebra.describe(current)["solved"])
+        with self.assertRaisesRegex(ValueError, "solvable equations"):
+            generate_algebra_cases(123, 10)
+
+    def test_algebra_heuristic_baseline_matches_the_reference_paths(self):
+        cases, _ = generate_algebra_cases(123, 4)
+        for case in cases:
+            result = run_trial(case, "heuristic", 1, 12, 512, 8, system="algebra")
+            self.assertTrue(result["success"], (case["equation"], result["outcome"]))
+            self.assertEqual(result["steps"], case["reference_steps"])
+            self.assertEqual(result["provider_calls"], 0)
+
+    def test_grammar_cases_are_reproducible_with_legal_chart_witnesses(self):
+        first = generate_grammar_cases(123, 4)
+        self.assertEqual(first, generate_grammar_cases(123, 4))
+        cases, reference = first
+        self.assertEqual(len(cases), 4)
+        self.assertEqual(
+            sorted(case["kind"] for case in cases),
+            ["deadend", "reachable", "reachable", "unparseable"],
+        )
+        for case in cases:
+            if case["kind"] == "unparseable":
+                self.assertIsNone(case["reference_steps"])
+                self.assertIn("no complete parse", case["proof"])
+                continue
+            current = grammar.describe(case["sentence"])["current"]
+            for step in case["witness"]:
+                self.assertEqual(step["current"], current)
+                self.assertIn(step["move"], grammar.describe(current)["moves"])
+                current = step["move"]["result"]
+            self.assertTrue(grammar.describe(current)["solved"])
+
+    def test_grammar_deadend_sentence_traps_greedy_reductions(self):
+        sentence = next(s for s, kind in benchmark.GRAMMAR_POOL if kind == "deadend")
+        state = grammar.describe(sentence)
+        self.assertEqual(state["parse_count"], 1)
+        while any(m["label"].endswith("NP → Det N") for m in state["moves"]):
+            move = next(m for m in state["moves"] if m["label"].endswith("NP → Det N"))
+            state = grammar.describe(move["result"])
+        vp = next(m for m in state["moves"] if "VP → V NP" in m["label"])
+        state = grammar.describe(vp["result"])
+        completion = next(m for m in state["moves"] if "S → NP VP" in m["label"])
+        stranded = grammar.describe(completion["result"])
+        self.assertFalse(stranded["solved"])
+        self.assertEqual(stranded["moves"], [])
+
+    def test_grammar_heuristic_baseline_completes_parses_and_avoids_the_dead_end(self):
+        cases, _ = generate_grammar_cases(123, 4)
+        for case in cases:
+            result = run_trial(case, "heuristic", 1, 20, 512, 8, system="grammar")
+            if case["kind"] == "unparseable":
+                self.assertFalse(result["success"])
+                self.assertIn(result["outcome"], ("no_moves", "step_budget", "stagnation"))
+            else:
+                self.assertTrue(result["success"], (case["sentence"], result["outcome"]))
+                self.assertEqual(result["steps"], case["reference_steps"])
+
+    def test_cli_runs_keyless_algebra_and_grammar_comparisons(self):
+        for system, source in (("algebra", "algebra.py"), ("grammar", "grammar.py")):
+            with self.subTest(system=system):
+                with tempfile.TemporaryDirectory() as directory:
+                    output = Path(directory) / "results.json"
+                    process = subprocess.run(
+                        [sys.executable, str(Path(__file__).with_name("benchmark.py")),
+                         "--system", system, "--targets", "3", "--repeats", "1",
+                         "--output", str(output)],
+                        capture_output=True, text=True, timeout=60, check=True,
+                    )
+                    report = json.loads(output.read_text(encoding="utf-8"))
+                self.assertIn("Results saved", process.stdout)
+                self.assertEqual(report["system"], system)
+                self.assertIn(source, report["source_sha256"])
+                self.assertEqual(report["configuration"]["max_length"], 512)
+                self.assertEqual(len(report["trials"]), 6)
+                self.assertTrue(all(row["provider_calls"] == 0 for row in report["trials"]))
+                self.assertEqual(report["summary"], summarize(report["trials"]))
 
     def test_menu_order_arm_is_reproducible_and_audited(self):
         def run_with(menu_order):

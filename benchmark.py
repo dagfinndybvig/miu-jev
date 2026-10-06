@@ -16,6 +16,8 @@ import sys
 import time
 from typing import Any
 
+import algebra
+import grammar
 import lambda_calc
 from app import (
     DEFAULT_MODELS, MAX_MIU_LENGTH, DecisionError, choose_move, legal_moves,
@@ -31,6 +33,27 @@ WRONG_HINT_RECOMMENDATION = (
 LAMBDA_ADD = r"(\m.\n.\f.\x. m f (n f x))"
 LAMBDA_MUL = r"(\m.\n.\f. m (n f))"
 LAMBDA_SUCC = r"(\n.\f.\x. f (n f x))"
+
+ALGEBRA_POOL = (
+    ("2 * (x + 3) = 14", "reachable"),
+    ("5 * x + 2 = 17", "reachable"),
+    ("x / 2 + 1 = 4", "reachable"),
+    ("3 * (x - 1) = 12", "reachable"),
+    ("(x + 2) * 2 = 10", "reachable"),
+    ("4 * x - 3 = 2 * x + 5", "reachable"),
+    ("x / 4 + 1 = x / 8 + 3", "reachable"),
+    ("2 * (x + 1) = 2 * x + 2", "identity"),
+    ("x + 1 = x + 2", "contradiction"),
+)
+
+GRAMMAR_POOL = (
+    ("the man saw the dog with the telescope", "reachable"),
+    ("the man and the woman saw the dog", "reachable"),
+    ("a woman found a dog near the park", "reachable"),
+    ("the dog chased the man", "reachable"),
+    ("the man saw the dog and the telescope", "deadend"),
+    ("the man and saw the dog", "unparseable"),
+)
 
 
 def church(n: int) -> str:
@@ -90,6 +113,92 @@ def lambda_terms() -> list[tuple[str, str]]:
 
 NOVEL_MAX_REFERENCE_STEPS = 14
 NOVEL_MIN_REFERENCE_STEPS = 3
+
+
+def generate_algebra_cases(seed: int, count: int) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Curated linear equations with greedy guided reference paths: solvable
+    equations, an identity, and a contradiction, each reduced to the
+    server-owned solved form (isolated x, or a numeric equality)."""
+    rng = random.Random(seed)
+    reachable = [equation for equation, kind in ALGEBRA_POOL if kind == "reachable"]
+    identity = [equation for equation, kind in ALGEBRA_POOL if kind == "identity"]
+    contradiction = [equation for equation, kind in ALGEBRA_POOL if kind == "contradiction"]
+    rng.shuffle(reachable)
+    if count - 2 > len(reachable):
+        raise ValueError(
+            f"Algebra pool has {len(reachable)} solvable equations; "
+            "lower --targets or extend ALGEBRA_POOL"
+        )
+    selected = list(zip(reachable[:count - 2], ["reachable"] * (count - 2)))
+    selected.append((identity[0], "identity"))
+    selected.append((contradiction[0], "contradiction"))
+    rng.shuffle(selected)
+
+    cases = []
+    for equation, kind in selected:
+        path, solved = algebra.reference_solution(equation)
+        if solved is None:
+            raise ValueError(f"Curated algebra equation never solves: {equation}")
+        cases.append({
+            "equation": equation, "goal": algebra.GOAL, "kind": kind,
+            "reference_steps": len(path),
+            "witness": [{"current": step["current"], "move": step["move"]} for step in path],
+        })
+    return cases, {
+        "pool_reachable": len(reachable), "pool_identity": len(identity),
+        "pool_contradiction": len(contradiction),
+        "scope": "Greedy guided reference paths, which reach a solved form "
+                 "whenever the finite vocabulary admits one in budget.",
+    }
+
+
+def generate_grammar_cases(seed: int, count: int) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Curated toy-fragment sentences with chart-guided reference parses.
+    Reachable sentences complete a parse; the dead-end sentence is fully
+    parseable but a greedy first reduction strands a modifier with no legal
+    move left; the unparseable sentence admits no complete parse at all."""
+    rng = random.Random(seed)
+    reachable = [sentence for sentence, kind in GRAMMAR_POOL if kind == "reachable"]
+    deadend = [sentence for sentence, kind in GRAMMAR_POOL if kind == "deadend"]
+    unparseable = [sentence for sentence, kind in GRAMMAR_POOL if kind == "unparseable"]
+    rng.shuffle(reachable)
+    if count - 2 > len(reachable):
+        raise ValueError(
+            f"Grammar pool has {len(reachable)} parseable sentences; "
+            "lower --targets or extend GRAMMAR_POOL"
+        )
+    selected = list(zip(reachable[:count - 2], ["reachable"] * (count - 2)))
+    selected.append((deadend[0], "deadend"))
+    selected.append((unparseable[0], "unparseable"))
+    rng.shuffle(selected)
+
+    cases = []
+    for sentence, kind in selected:
+        path, complete = grammar.reference_parse(sentence)
+        if kind == "unparseable":
+            forest = grammar.parse_state(sentence)
+            parse_count, _ = grammar.count_parses(grammar.yield_words(forest))
+            if parse_count:
+                raise ValueError(f"Sentence unexpectedly parses: {sentence}")
+            cases.append({
+                "sentence": sentence, "goal": grammar.GOAL, "kind": kind,
+                "reference_steps": None, "witness": None,
+                "proof": "The chart finds no complete parse of this word sequence.",
+            })
+            continue
+        if complete is None:
+            raise ValueError(f"Curated sentence never completes a parse: {sentence}")
+        cases.append({
+            "sentence": sentence, "goal": grammar.GOAL, "kind": kind,
+            "reference_steps": len(path),
+            "witness": [{"current": step["current"], "move": step["move"]} for step in path],
+        })
+    return cases, {
+        "pool_reachable": len(reachable), "pool_deadend": len(deadend),
+        "pool_unparseable": len(unparseable),
+        "scope": "Chart-guided reference parses, which reach a complete parse "
+                 "whenever one exists in budget.",
+    }
 
 
 def _novel_tree(rng: random.Random) -> str:
@@ -305,6 +414,25 @@ def present_menu(
     raise ValueError("Unknown menu order")
 
 
+ENGINE_BY_SYSTEM = {
+    "lambda": lambda_calc,
+    "algebra": algebra,
+    "grammar": grammar,
+}
+
+
+def case_start(case: dict[str, Any], system: str) -> str:
+    """The engine-normalized starting state of a benchmark case."""
+    if system == "miu":
+        return "MI"
+    source = (
+        case["term"] if system == "lambda"
+        else case["equation"] if system == "algebra"
+        else case["sentence"]
+    )
+    return ENGINE_BY_SYSTEM[system].describe(source)["current"]
+
+
 def run_trial(
     case: dict[str, Any], strategy: str, seed: int, max_steps: int,
     max_length: int, stagnation_limit: int,
@@ -318,14 +446,15 @@ def run_trial(
         raise ValueError("Unknown menu order")
     if strategy in ("model", "guided") and (provider not in DEFAULT_MODELS or not model):
         raise ValueError("Model strategies require an explicit provider and model")
+    engine = None if system == "miu" else ENGINE_BY_SYSTEM[system]
     rng = random.Random(seed)
-    goal = case["goal"] if system == "miu" else lambda_calc.GOAL
-    start = lambda_calc.describe(case["term"])["current"] if system == "lambda" else "MI"
+    goal = case["goal"] if system == "miu" else engine.GOAL
+    start = case_start(case, system)
     history = [start]
-    if system == "lambda":
-        best_distance = lambda_calc.describe(start)["progress"]
-    else:
+    if system == "miu":
         best_distance = target_distance("MI", case["goal"])
+    else:
+        best_distance = engine.describe(start)["progress"]
     stagnant_steps = 0
     calls = overrides = evaluated_groups = 0
     evidence: list[dict[str, Any]] = []
@@ -333,11 +462,11 @@ def run_trial(
     outcome = "step_budget"
     for _ in range(max_steps):
         current = history[-1]
-        if system == "lambda":
-            state = lambda_calc.describe(current)
-            moves, solved = state["moves"], state["solved"]
-        else:
+        if system == "miu":
             moves, solved = legal_moves(current), current == case["goal"]
+        else:
+            state = engine.describe(current)
+            moves, solved = state["moves"], state["solved"]
         if solved:
             outcome = "found"
             break
@@ -388,14 +517,10 @@ def run_trial(
             entry["selection"] = {"reason": "Seeded uniform choice over all legal moves."}
         else:
             explanation: dict[str, Any] = {}
-            if system == "lambda":
-                move = lambda_calc.select_move(
-                    "guided", current, goal, history, moves, moves[0], {}, max_length, explanation,
-                )
-            else:
-                move = select_move(
-                    "guided", current, goal, history, moves, moves[0], {}, max_length, explanation,
-                )
+            selector = select_move if system == "miu" else engine.select_move
+            move = selector(
+                "guided", current, goal, history, moves, moves[0], {}, max_length, explanation,
+            )
             entry["selection"] = explanation
         if move not in moves:
             raise RuntimeError("Strategy returned a move outside the legal menu")
@@ -409,13 +534,13 @@ def run_trial(
             break
         entry["applied"] = True
         history.append(successor)
-        if successor == goal or (system == "lambda" and lambda_calc.describe(successor)["solved"]):
+        if successor == goal or (engine is not None and engine.describe(successor)["solved"]):
             outcome = "found"
             break
-        if system == "lambda":
-            distance = lambda_calc.describe(successor)["progress"]
-        else:
+        if system == "miu":
             distance = target_distance(successor, case["goal"])
+        else:
+            distance = engine.describe(successor)["progress"]
         if distance < best_distance:
             best_distance = distance
             stagnant_steps = 0
@@ -456,14 +581,16 @@ def summarize(trials: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "kind": kind, "strategy": strategy, "provider": provider, "model": model,
             "menu_order": menu_order,
             "trials": len(rows), "successes": len(successes),
-            "success_rate": len(successes) / len(rows) if kind != "impossible" else None,
+            "success_rate": (
+                len(successes) / len(rows) if kind not in ("impossible", "unparseable") else None
+            ),
             "mean_steps": statistics.mean(row["steps"] for row in rows),
             "mean_success_steps": (
                 statistics.mean(row["steps"] for row in successes) if successes else None
             ),
             "mean_excess_steps_over_bounded_bfs": (
                 statistics.mean(row["steps"] - row["reference_steps"] for row in successes)
-                if successes and kind != "impossible" else None
+                if successes and kind not in ("impossible", "unparseable") else None
             ),
             "mean_elapsed_ms": statistics.mean(row["elapsed_ms"] for row in rows),
             "provider_calls": sum(row["provider_calls"] for row in rows),
@@ -479,7 +606,9 @@ def main() -> None:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(errors="backslashreplace")
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--system", choices=("miu", "lambda"), default="miu")
+    parser.add_argument(
+        "--system", choices=("miu", "lambda", "algebra", "grammar"), default="miu",
+    )
     parser.add_argument("--providers", nargs="+", choices=tuple(DEFAULT_MODELS), default=[])
     parser.add_argument("--ollama-model", default=DEFAULT_MODELS["ollama"])
     parser.add_argument("--typesafe-model", default=DEFAULT_MODELS["typesafe"])
@@ -515,9 +644,14 @@ def main() -> None:
     )
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
+    engine = ENGINE_BY_SYSTEM.get(args.system)
+    engine_limit = (
+        MAX_MIU_LENGTH if engine is None
+        else engine.MAX_CHARS if hasattr(engine, "MAX_CHARS") else engine.MAX_LENGTH
+    )
     if args.max_length is None:
-        args.max_length = 32 if args.system == "miu" else lambda_calc.MAX_CHARS
-    absolute_limit = MAX_MIU_LENGTH if args.system == "miu" else lambda_calc.MAX_CHARS
+        args.max_length = 32 if args.system == "miu" else engine_limit
+    absolute_limit = engine_limit
     if (
         not 8 <= args.max_length <= absolute_limit
         or min(args.targets, args.repeats, args.max_steps, args.stagnation_limit, args.bfs_states) < 1
@@ -556,11 +690,15 @@ def main() -> None:
         cases, reference = generate_cases(
             args.seed, args.targets, args.max_length, args.bfs_depth, args.bfs_states,
         )
-    else:
+    elif args.system == "lambda":
         cases, reference = generate_lambda_cases(
             args.seed, args.targets, novel=args.novel_terms,
             tournament=args.tournament_terms,
         )
+    elif args.system == "algebra":
+        cases, reference = generate_algebra_cases(args.seed, args.targets)
+    else:
+        cases, reference = generate_grammar_cases(args.seed, args.targets)
 
     strategies: list[tuple[str, str, str | None, str | None, bool, bool]] = [
         ("random", "random", None, None, True, False),
@@ -583,7 +721,10 @@ def main() -> None:
     random.Random(args.seed).shuffle(schedule)
     root = Path(__file__).resolve().parent
     source_files = ["app.py", "benchmark.py"] + (
-        ["lambda_calc.py"] if args.system == "lambda" else []
+        ["lambda_calc.py"] if args.system == "lambda"
+        else ["algebra.py"] if args.system == "algebra"
+        else ["grammar.py"] if args.system == "grammar"
+        else []
     )
     report: dict[str, Any] = {
         "schema_version": 1, "created_at": datetime.now(timezone.utc).isoformat(),
@@ -595,8 +736,10 @@ def main() -> None:
         "configuration": {
             **{key: value for key, value in vars(args).items() if key != "output"},
             "note": "Seeds control targets, scheduling and random baseline, not provider sampling. "
-                    "Omega or MU exploration is excluded from reachable success rates. "
-                    "Reference steps are bounded-BFS paths for MIU and normal-order paths for lambda. "
+                    "Impossible-target exploration (MU, Omega, unparseable sentences) is excluded "
+                    "from reachable success rates. "
+                    "Reference steps are bounded-BFS paths for MIU, normal-order paths for lambda, "
+                    "greedy guided paths for algebra, and chart-guided parses for grammar. "
                     "Hint-off strategies remove precomputed annotations from provider menus, "
                     "not from the deterministic guided policy. "
                     "The menu-order arm permutes provider-facing menus "
@@ -605,7 +748,8 @@ def main() -> None:
                     "Wrong-hint arms annotate diverging self-loop contractions "
                     "as recommended in hint-on menus; the annotation changes "
                     "descriptive text only, never legality. "
-                    "Latency excludes UI delays and includes provider/version-check overhead.",
+                    "Latency excludes UI delays and includes provider/version-check overhead. "
+                    "Providers are stateless across trials: results measure selection, not learning.",
         },
         "reference": reference, "cases": cases, "trials": [], "summary": [],
         "completed": False,
@@ -624,7 +768,12 @@ def main() -> None:
         report["summary"] = summarize(report["trials"])
         report["completed"] = index == len(schedule)
         args.output.write_text(json.dumps(report, indent=2, allow_nan=False) + "\n", encoding="utf-8")
-        label_text = case["goal"] if args.system == "miu" else case["term"][:24]
+        label_text = (
+            case["goal"] if args.system == "miu"
+            else case["term"][:24] if args.system == "lambda"
+            else case["equation"] if args.system == "algebra"
+            else case["sentence"]
+        )
         print(f"{index}/{len(schedule)} {label_text} {provider or 'baseline'}/{label}: "
               f"{trial['outcome']} ({trial['steps']} steps)", flush=True)
     print(f"Results saved to {args.output}")
