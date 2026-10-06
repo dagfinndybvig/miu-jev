@@ -59,6 +59,8 @@ benchmark-results-lambda-order-shuffled.json measured lambda position-bias sampl
 benchmark-results-lambda-wrong-hint.json measured lambda wrong-hint deference sample
 benchmark-results-lambda-tournament-fixed.json measured lambda tournament-stress reference (fixed order)
 benchmark-results-lambda-tournament-shuffled.json measured lambda tournament-stress sample (shuffled menus)
+benchmark-results-algebra.json measured algebra comparison sample
+benchmark-results-grammar.json measured grammar comparison sample
 web/index.html  page structure and settings
 web/styles.css  responsive presentation
 web/app.js      browser state, API calls, controls, and rendering
@@ -372,6 +374,7 @@ Add or update tests when changing:
 - request or response mapping; or
 - input validation.
 - lambda benchmark pools, normal-order witnesses, novel-term generation, tournament-stress terms, hint-ablation, wrong-hint, or menu-order arms.
+- algebra benchmark pools or greedy guided witnesses; grammar benchmark pools, chart-guided parses, or dead-end sentences.
 
 At minimum, run:
 
@@ -390,7 +393,9 @@ command, test fixture, source file, log, or commit.
 
 `python benchmark.py --output baseline-results.json` runs MIU-only keyless baselines.
 `--system lambda` runs the curated lambda pool (Church arithmetic, traps,
-growth, Omega) with normal-order reference paths; `--hint-ablation` adds
+growth, Omega) with normal-order reference paths; `--system algebra` and
+`--system grammar` run their curated pools with greedy-guided and
+chart-guided references; `--hint-ablation` adds
 provider arms whose menus carry no precomputed annotations; `--menu-order fixed|reversed|shuffled` presents provider-facing menus reversed or in a per-state seeded shuffle to control position bias, with baselines always on the fixed server order; `--novel-terms N` (lambda) replaces up to targets - 2 curated reachable slots with seeded normalizing compositions that stay ahead of the training curriculum; `--wrong-hint` (lambda) adds provider arms annotating the diverging Ω self-loop as recommended (descriptive text only); `--tournament-terms N` (lambda) adds majority-losing tournament-stress cases.
 Model comparisons require explicit `--providers ollama` or
 `--providers ollama typesafe`. Apply the same execution budgets to every

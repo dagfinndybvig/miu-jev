@@ -862,6 +862,8 @@ benchmark-results-lambda-order-shuffled.json measured lambda position-bias sampl
 benchmark-results-lambda-wrong-hint.json measured lambda wrong-hint deference sample
 benchmark-results-lambda-tournament-fixed.json measured lambda tournament-stress reference (fixed order)
 benchmark-results-lambda-tournament-shuffled.json measured lambda tournament-stress sample (shuffled menus)
+benchmark-results-algebra.json measured algebra comparison sample
+benchmark-results-grammar.json measured grammar comparison sample
 ```
 
 The Python server is stateless with respect to a run. The browser sends the
@@ -1120,8 +1122,9 @@ Node.js is not required to run the app.
 
 ## Controlled strategy comparisons
 
-The benchmark runner defaults to **MIU**; its measurements do not evaluate
-algebra or grammar strategies. `--system lambda` selects a lambda pool instead.
+The benchmark runner defaults to **MIU**. `--system lambda`, `--system
+algebra`, and `--system grammar` select the other pools; algebra reference
+paths are greedy-guided and grammar reference parses are chart-guided.
 
 One caveat applies to every number in this section and to all measured
 samples below: **the providers are stateless across trials.** Neither model
@@ -1348,6 +1351,37 @@ rejected a ~117KB one during pool calibration, which sized the compact soft
 term. Random baselines confirm the majority loses (2/6 found); the
 heuristic baseline takes the discard (6/6, 2.0 steps). The stateless caveat
 applies: these are fresh selections, not learning.
+
+### Measured algebra and grammar samples: 6 October 2026
+
+The checked-in [algebra report](benchmark-results-algebra.json) holds 60
+trials and the [grammar report](benchmark-results-grammar.json) holds 90:
+both providers, both policies, and both baselines over the new pools.
+Reproduce them:
+
+```powershell
+python benchmark.py --system algebra --providers ollama typesafe --targets 5 --repeats 2 --max-steps 12 --output algebra-results.json
+python benchmark.py --system grammar --providers ollama typesafe --targets 5 --repeats 3 --max-steps 20 --output grammar-results.json
+```
+
+**Reference-perfect algebra.** Every arm solved all five equations — three
+solvable equations, an identity, and a contradiction — at exactly the
+greedy-guided reference steps, with identities and contradictions reduced
+to numeric equalities, not failures. The seeded random baseline failed half
+the solvable set on cycles and half the identities on the step budget, so
+the menus demand strategy rather than luck.
+
+**No dead ends for the models.** In grammar, both providers completed every
+parseable sentence at reference steps, including the dead-end sentence
+(`the man saw the dog and the telescope`), whose greedy VP-then-S path
+strands the coordination with no legal move left; only the random baseline
+fell in (1/3). The unparseable sentence dead-ends for every arm and is
+excluded from success rates — a dead end is an outcome of a derivation, not
+a proof about the sentence. Toy-fragment menus stay small (at most ~7 moves
+at leaf states), so grammar cannot stress the 26-choice tournament path;
+that stress remains lambda-only.
+
+The stateless caveat applies to both samples: fresh selections, not learning.
 
 ## Scope
 

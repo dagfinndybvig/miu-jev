@@ -57,8 +57,15 @@ work (5 October 2026), highest value first.
 
 ## Lower priority
 
-5. **Algebra and grammar benchmark modes.** `--system` supports miu and lambda;
-   algebra and grammar have no controlled comparison yet.
+5. **Algebra and grammar benchmark modes.** Implemented and measured 6
+   October 2026: `--system algebra` and `--system grammar` run the shared
+   comparison protocol with greedy-guided and chart-guided reference
+   witnesses (benchmark-results-algebra.json and -grammar.json, both
+   providers). Algebra: every arm solved every equation, identity, and
+   contradiction at reference-optimal steps; random exposed the traps
+   (cycles, step budgets). Grammar: every arm completed every parseable
+   sentence; unparseable sentences dead-end everywhere and stay out of
+   success denominators.
 6. **Stateless-model caveat.** Done 6 October 2026: the caveat is stated
    in the README's controlled-comparisons intro and its measured-sample
    sections — providers never learn within or across sessions, so every
@@ -82,8 +89,14 @@ work (5 October 2026), highest value first.
    the corpus default for instrument PPs, but the sentence is verbatim in
    every linguistics textbook, so this may measure recall (see item 4).
    Run it on novel sentences before drawing conclusions.
-8. **Dead-end avoidance.** Curate sentences whose greedy-looking first
-   reduction strands a modifier (the `VP → V NP` then `S → NP VP` trap) and
-   measure model-only dead-end rates against the chart-completable guided
-   policy and `reference_parse`. Large coordination sentences would also give
-   menus big enough to stress the 26-choice tournament path.
+8. **Dead-end avoidance.** Measured 6 October 2026 (checked-in grammar
+   report): the curated dead-end sentence `the man saw the dog and the
+   telescope` is fully parseable, but the greedy-looking VP-then-S path
+   strands the coordination with no legal move left. Model-only dead-end
+   rates were 0/3 for both Nimble and Jev — both avoided the trap under
+   model-only and guided at reference steps — while the seeded random
+   baseline dead-ended 1/3. Dead ends are recorded as outcomes, never
+   proofs about the sentence. Note: toy-fragment menus stay small (at most
+   about seven moves at leaf states for sentences of at most 16 words), so
+   grammar cannot stress the 26-choice tournament path; that stress stays
+   lambda-only (see item 3).
