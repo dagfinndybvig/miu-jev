@@ -174,14 +174,34 @@ def generate_lambda_cases(seed: int, count: int) -> tuple[list[dict[str, Any]], 
     }
 
 
+def present_menu(
+    moves: list[dict[str, Any]], menu_order: str, seed: int, current: str,
+) -> list[dict[str, Any]]:
+    """Order the provider-facing menu: the fixed server order, its reverse, or
+    a per-state seeded shuffle. Move ids stay server-owned, so evidence stays
+    auditable while menu position becomes a controlled variable."""
+    if menu_order == "fixed":
+        return moves
+    presented = list(moves)
+    if menu_order == "reversed":
+        presented.reverse()
+        return presented
+    if menu_order == "shuffled":
+        random.Random(f"menu:{seed}:{current}").shuffle(presented)
+        return presented
+    raise ValueError("Unknown menu order")
+
+
 def run_trial(
     case: dict[str, Any], strategy: str, seed: int, max_steps: int,
     max_length: int, stagnation_limit: int,
     provider: str | None = None, model: str | None = None,
-    system: str = "miu", hints: bool = True,
+    system: str = "miu", hints: bool = True, menu_order: str = "fixed",
 ) -> dict[str, Any]:
     if strategy not in ("random", "heuristic", "model", "guided"):
         raise ValueError("Unknown strategy")
+    if menu_order not in ("fixed", "reversed", "shuffled"):
+        raise ValueError("Unknown menu order")
     if strategy in ("model", "guided") and (provider not in DEFAULT_MODELS or not model):
         raise ValueError("Model strategies require an explicit provider and model")
     rng = random.Random(seed)
@@ -213,9 +233,11 @@ def run_trial(
         entry: dict[str, Any] = {"current": current, "applied": False}
         evidence.append(entry)
         if strategy in ("model", "guided"):
+            presented = present_menu(moves, menu_order, seed, current)
+            entry["presented"] = [move["id"] for move in presented]
             try:
                 decision = choose_move(
-                    provider, model, strategy, current, goal, history, moves,
+                    provider, model, strategy, current, goal, history, presented,
                     max_length, system=system, hints=hints,
                 )
             except DecisionError as error:
@@ -282,7 +304,7 @@ def run_trial(
     return {
         "goal": case["goal"], "kind": case["kind"], "strategy": strategy,
         "provider": provider, "model": model, "seed": seed,
-        "system": system, "hints": hints,
+        "system": system, "hints": hints, "menu_order": menu_order,
         "outcome": outcome, "success": outcome == "found",
         "steps": len(history) - 1, "history": history,
         "reference_steps": case["reference_steps"],
@@ -294,17 +316,21 @@ def run_trial(
 
 
 def summarize(trials: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    groups: dict[tuple[str, str, str | None, str | None], list[dict[str, Any]]] = {}
+    groups: dict[tuple[str, str, str | None, str | None, str], list[dict[str, Any]]] = {}
     for trial in trials:
-        key = (trial["kind"], trial["strategy"], trial["provider"], trial["model"])
+        key = (
+            trial["kind"], trial["strategy"], trial["provider"], trial["model"],
+            trial.get("menu_order", "fixed"),
+        )
         groups.setdefault(key, []).append(trial)
     summaries = []
-    for (kind, strategy, provider, model), rows in groups.items():
+    for (kind, strategy, provider, model, menu_order), rows in groups.items():
         successes = [row for row in rows if row["success"]]
         evaluated = sum(row["evaluated_groups"] for row in rows)
         overrides = sum(row["override_count"] for row in rows)
         summaries.append({
             "kind": kind, "strategy": strategy, "provider": provider, "model": model,
+            "menu_order": menu_order,
             "trials": len(rows), "successes": len(successes),
             "success_rate": len(successes) / len(rows) if kind != "impossible" else None,
             "mean_steps": statistics.mean(row["steps"] for row in rows),
@@ -340,6 +366,11 @@ def main() -> None:
     parser.add_argument("--bfs-depth", type=int, default=7)
     parser.add_argument("--bfs-states", type=int, default=10000)
     parser.add_argument("--hint-ablation", action="store_true")
+    parser.add_argument(
+        "--menu-order", choices=("fixed", "reversed", "shuffled"), default="fixed",
+        help="permute provider-facing menus to control position bias; "
+             "baselines always use the fixed server order",
+    )
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     if args.max_length is None:
@@ -401,6 +432,9 @@ def main() -> None:
                     "Reference steps are bounded-BFS paths for MIU and normal-order paths for lambda. "
                     "Hint-off strategies remove precomputed annotations from provider menus, "
                     "not from the deterministic guided policy. "
+                    "The menu-order arm permutes provider-facing menus "
+                    "(reversed, or a per-state seeded shuffle); "
+                    "baselines always use the fixed server order. "
                     "Latency excludes UI delays and includes provider/version-check overhead.",
         },
         "reference": reference, "cases": cases, "trials": [], "summary": [],
@@ -411,6 +445,7 @@ def main() -> None:
             case, policy, args.seed + repeat, args.max_steps,
             args.max_length, args.stagnation_limit, provider, model,
             args.system, hints,
+            args.menu_order if policy in ("model", "guided") else "fixed",
         )
         trial["strategy"] = label
         trial["repeat"] = repeat + 1

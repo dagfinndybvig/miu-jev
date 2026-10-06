@@ -366,7 +366,7 @@ Add or update tests when changing:
 - TypeSafe credential requirements;
 - request or response mapping; or
 - input validation.
-- lambda benchmark pools, normal-order witnesses, or hint-ablation arms.
+- lambda benchmark pools, normal-order witnesses, hint-ablation, or menu-order arms.
 
 At minimum, run:
 
@@ -386,7 +386,7 @@ command, test fixture, source file, log, or commit.
 `python benchmark.py --output baseline-results.json` runs MIU-only keyless baselines.
 `--system lambda` runs the curated lambda pool (Church arithmetic, traps,
 growth, Omega) with normal-order reference paths; `--hint-ablation` adds
-provider arms whose menus carry no precomputed annotations.
+provider arms whose menus carry no precomputed annotations; `--menu-order fixed|reversed|shuffled` presents provider-facing menus reversed or in a per-state seeded shuffle to control position bias, with baselines always on the fixed server order.
 Model comparisons require explicit `--providers ollama` or
 `--providers ollama typesafe`. Apply the same execution budgets to every
 strategy, keep impossible-target exploration out of reachable success rates,

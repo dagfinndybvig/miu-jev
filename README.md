@@ -1131,6 +1131,7 @@ python benchmark.py --providers ollama --output local-results.json
 python benchmark.py --providers ollama typesafe --output comparison-results.json
 python benchmark.py --system lambda --output lambda-baseline.json
 python benchmark.py --system lambda --providers ollama typesafe --hint-ablation --output lambda-results.json
+python benchmark.py --system lambda --providers ollama --menu-order shuffled --output lambda-shuffled.json
 ```
 
 The TypeSafe command sends only generated MIU benchmark inputs to the hosted
@@ -1146,10 +1147,14 @@ impossible-target exploration. Reference steps are normal-order paths, which
 reach a normal form whenever one exists. `--hint-ablation` adds model and
 guided arms whose provider menus carry **no precomputed annotations** — no
 solved flags, duplication costs, or search guidance — so raw model judgment
-can be compared directly against hint-assisted selection. When interpreting
-results, vary the menu order: leftmost-outermost is always the first menu
-entry, so a model that always picks the first option and a model following
-normal order are indistinguishable until the order changes.
+can be compared directly against hint-assisted selection. `--menu-order reversed` or
+`--menu-order shuffled` controls position bias reproducibly: the provider-facing
+menu is presented reversed, or in a per-state seeded shuffle, while baselines
+always use the fixed server order. Move ids stay server-owned, so trial
+evidence records the presented order and remains auditable. Without this
+control, leftmost-outermost is always the first menu entry, so a model that
+always picks the first option and a model following normal order are
+indistinguishable until the order changes.
 
 All strategies start at `MI` with the same step, length, cycle, and edit-distance
 stagnation limits. Random selects uniformly over legal applications; the

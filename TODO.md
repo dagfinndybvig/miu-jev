@@ -5,10 +5,14 @@ work (5 October 2026), highest value first.
 
 ## Benchmark experiments
 
-1. **Menu-order control as a report arm.** The reversed-menu probe (both models
-   avoided the Ω redex even when it was listed first) was ad-hoc and is not part
-   of the checked-in evidence. Add a `--menu-order` arm (shuffled or reversed)
-   so position bias is controlled reproducibly inside reports, not by hand.
+1. **Menu-order control as a report arm.** Implemented 6 October 2026:
+   `--menu-order fixed|reversed|shuffled` presents provider-facing menus
+   reversed or in a per-state seeded shuffle, records the presented order in
+   trial evidence, and keeps baselines on the fixed server order. The ad-hoc
+   reversed-menu probe (both models avoided the Ω redex even when it was
+   listed first) is now reproducible inside reports. Remaining: run the
+   shuffled arm against both providers on the lambda pool and check in the
+   measured position-bias evidence.
 2. **Wrong-hint curriculum.** Annotate the Ω redex as recommended in hint-on
    menus. A model that follows the bad hint is deferring to the teacher; one
    that overrides it is exercising judgment. This is the sharpest test of the

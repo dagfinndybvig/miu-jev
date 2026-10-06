@@ -172,6 +172,59 @@ class BenchmarkTests(unittest.TestCase):
         self.assertEqual(choose.call_args.kwargs["system"], "lambda")
         self.assertEqual(choose.call_args.kwargs["hints"], False)
 
+    def test_menu_order_arm_is_reproducible_and_audited(self):
+        def run_with(menu_order):
+            captured = []
+
+            def fake_choose(provider, model, policy, current, goal, history, moves,
+                            max_length, system="miu", hints=True):
+                captured.append([move["id"] for move in moves])
+                return {"move": moves[0], "rounds": [], "provider_calls": 0,
+                        "override_count": 0}
+
+            case = {"goal": "MU", "kind": "impossible", "reference_steps": None}
+            with patch("benchmark.choose_move", side_effect=fake_choose):
+                trial = run_trial(case, "model", 5, 2, 32, 4, "ollama", "nimble",
+                                  menu_order=menu_order)
+            return trial, captured
+
+        menu_ids = [move["id"] for move in legal_moves("MI")]
+        fixed, fixed_calls = run_with("fixed")
+        reversed_trial, reversed_calls = run_with("reversed")
+        shuffled, shuffled_calls = run_with("shuffled")
+        shuffled_again, shuffled_again_calls = run_with("shuffled")
+
+        self.assertEqual(fixed_calls[0], menu_ids)
+        self.assertEqual(reversed_calls[0], list(reversed(menu_ids)))
+        self.assertEqual(shuffled_calls, shuffled_again_calls)
+        self.assertEqual(set(shuffled_calls[0]), set(menu_ids))
+        self.assertEqual(fixed["menu_order"], "fixed")
+        self.assertEqual(fixed["evidence"][0]["presented"], menu_ids)
+        self.assertEqual(reversed_trial["evidence"][0]["presented"], list(reversed(menu_ids)))
+        self.assertEqual(shuffled["evidence"][0]["presented"], shuffled_calls[0])
+        rows = summarize([fixed, reversed_trial, shuffled])
+        self.assertEqual(len(rows), 3)
+        self.assertEqual({row["menu_order"] for row in rows}, {"fixed", "reversed", "shuffled"})
+
+    def test_unknown_menu_order_is_rejected(self):
+        case = {"goal": "MU", "kind": "impossible", "reference_steps": None}
+        with self.assertRaisesRegex(ValueError, "Unknown menu order"):
+            run_trial(case, "model", 5, 2, 32, 4, "ollama", "nimble", menu_order="rotated")
+
+    def test_cli_records_menu_order_configuration(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "results.json"
+            subprocess.run(
+                [sys.executable, str(Path(__file__).with_name("benchmark.py")),
+                 "--targets", "2", "--repeats", "1", "--menu-order", "shuffled",
+                 "--output", str(output)],
+                capture_output=True, text=True, timeout=20, check=True,
+            )
+            report = json.loads(output.read_text(encoding="utf-8"))
+        self.assertEqual(report["configuration"]["menu_order"], "shuffled")
+        self.assertTrue(all(row["menu_order"] == "fixed" for row in report["trials"]))
+        self.assertTrue(all(row["menu_order"] == "fixed" for row in report["summary"]))
+
     def test_cli_produces_complete_keyless_comparison(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "results.json"
