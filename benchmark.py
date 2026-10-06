@@ -152,7 +152,48 @@ def generate_algebra_cases(seed: int, count: int) -> tuple[list[dict[str, Any]],
     }
 
 
-def generate_grammar_cases(seed: int, count: int) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+def novel_grammar_sentences(seed: int, count: int) -> list[tuple[str, str]]:
+    """Seeded ambiguous sentences no textbook prints: subject, verb, object,
+    then a PP that can attach to the object NP or the VP. Every sentence
+    chart-counts at least two complete parses, so attachment stays a
+    semantics preference rather than a syntax requirement, and each is
+    distinct from the curated pool."""
+    rng = random.Random(seed)
+    seen = {sentence for sentence, _ in GRAMMAR_POOL}
+    nouns = ("man", "woman", "dog", "pizza", "park", "telescope")
+    results: list[tuple[str, str]] = []
+    attempts = 0
+    while len(results) < count:
+        attempts += 1
+        if attempts > count * 200:
+            raise ValueError(
+                "Novel sentence generation exhausted its attempt budget; "
+                "lower --novel-sentences or extend the composition templates"
+            )
+        sentence = " ".join((
+            rng.choice(("the", "a")), rng.choice(nouns),
+            rng.choice(("saw", "found", "chased", "ate")),
+            rng.choice(("the", "a")), rng.choice(nouns),
+            rng.choice(("with", "in", "near", "under")),
+            rng.choice(("the", "a")), rng.choice(nouns),
+        ))
+        if sentence in seen:
+            continue
+        try:
+            forest = grammar.parse_sentence(sentence)
+        except ValueError:
+            continue
+        parse_count, _ = grammar.count_parses(grammar.yield_words(forest))
+        if parse_count < 2:
+            continue
+        seen.add(sentence)
+        results.append((sentence, "novel"))
+    return results
+
+
+def generate_grammar_cases(
+    seed: int, count: int, novel: int = 0,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Curated toy-fragment sentences with chart-guided reference parses.
     Reachable sentences complete a parse; the dead-end sentence is fully
     parseable but a greedy first reduction strands a modifier with no legal
@@ -162,12 +203,20 @@ def generate_grammar_cases(seed: int, count: int) -> tuple[list[dict[str, Any]],
     deadend = [sentence for sentence, kind in GRAMMAR_POOL if kind == "deadend"]
     unparseable = [sentence for sentence, kind in GRAMMAR_POOL if kind == "unparseable"]
     rng.shuffle(reachable)
-    if count - 2 > len(reachable):
+    if novel > count - 2:
+        raise ValueError(
+            "More novel sentences requested than reachable slots; "
+            "raise --targets or lower --novel-sentences"
+        )
+    if count - 2 - novel > len(reachable):
         raise ValueError(
             f"Grammar pool has {len(reachable)} parseable sentences; "
             "lower --targets or extend GRAMMAR_POOL"
         )
-    selected = list(zip(reachable[:count - 2], ["reachable"] * (count - 2)))
+    novel_pairs = novel_grammar_sentences(seed, novel) if novel else []
+    selected = novel_pairs + list(zip(
+        reachable[:count - 2 - novel], ["reachable"] * (count - 2 - novel),
+    ))
     selected.append((deadend[0], "deadend"))
     selected.append((unparseable[0], "unparseable"))
     rng.shuffle(selected)
@@ -195,7 +244,7 @@ def generate_grammar_cases(seed: int, count: int) -> tuple[list[dict[str, Any]],
         })
     return cases, {
         "pool_reachable": len(reachable), "pool_deadend": len(deadend),
-        "pool_unparseable": len(unparseable),
+        "pool_unparseable": len(unparseable), "pool_novel": len(novel_pairs),
         "scope": "Chart-guided reference parses, which reach a complete parse "
                  "whenever one exists in budget.",
     }
@@ -624,6 +673,11 @@ def main() -> None:
         help="lambda only: adds majority-losing cases whose menus exceed the "
              "26-choice tournament path",
     )
+    parser.add_argument(
+        "--novel-sentences", type=int, default=0,
+        help="grammar only: seeded ambiguous sentences no textbook contains, "
+             "replacing up to targets - 2 reachable slots",
+    )
     parser.add_argument("--repeats", type=int, default=3)
     parser.add_argument("--max-steps", type=int, default=20)
     parser.add_argument("--max-length", type=int, default=None)
@@ -679,6 +733,15 @@ def main() -> None:
             "--tournament-terms requires --system lambda, a non-negative count, "
             "and at most the size of the tournament pool"
         )
+    if (
+        args.novel_sentences < 0
+        or (args.novel_sentences and args.system != "grammar")
+        or (args.system == "grammar" and args.novel_sentences > args.targets - 2)
+    ):
+        parser.error(
+            "--novel-sentences requires --system grammar, a non-negative count, "
+            "and at most targets - 2 sentences"
+        )
     if args.wrong_hint and args.system != "lambda":
         parser.error("--wrong-hint requires --system lambda")
     for provider in args.providers:
@@ -698,7 +761,9 @@ def main() -> None:
     elif args.system == "algebra":
         cases, reference = generate_algebra_cases(args.seed, args.targets)
     else:
-        cases, reference = generate_grammar_cases(args.seed, args.targets)
+        cases, reference = generate_grammar_cases(
+            args.seed, args.targets, novel=args.novel_sentences,
+        )
 
     strategies: list[tuple[str, str, str | None, str | None, bool, bool]] = [
         ("random", "random", None, None, True, False),

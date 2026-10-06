@@ -14,8 +14,8 @@ import grammar
 import lambda_calc
 from benchmark import (
     generate_algebra_cases, generate_cases, generate_grammar_cases,
-    generate_lambda_cases, novel_lambda_terms, run_trial,
-    summarize, target_distance,
+    generate_lambda_cases, novel_grammar_sentences, novel_lambda_terms,
+    run_trial, summarize, target_distance,
 )
 
 
@@ -334,6 +334,61 @@ class BenchmarkTests(unittest.TestCase):
                 self.assertEqual(len(report["trials"]), 6)
                 self.assertTrue(all(row["provider_calls"] == 0 for row in report["trials"]))
                 self.assertEqual(report["summary"], summarize(report["trials"]))
+
+    def test_novel_sentences_are_ambiguous_and_reproducible(self):
+        first = novel_grammar_sentences(123, 3)
+        self.assertEqual(first, novel_grammar_sentences(123, 3))
+        curated = {sentence for sentence, _ in benchmark.GRAMMAR_POOL}
+        sentences = [sentence for sentence, _ in first]
+        self.assertEqual([kind for _, kind in first], ["novel"] * 3)
+        self.assertEqual(len(sentences), len(set(sentences)))
+        for sentence in sentences:
+            self.assertNotIn(sentence, curated)
+            state = grammar.describe(sentence)
+            self.assertGreaterEqual(state["parse_count"], 2)
+            self.assertLessEqual(len(sentence.split()), 16)
+
+    def test_grammar_cases_mix_novel_sentences(self):
+        cases, reference = generate_grammar_cases(123, 5, novel=3)
+        self.assertEqual(
+            sorted(case["kind"] for case in cases),
+            ["deadend", "novel", "novel", "novel", "unparseable"],
+        )
+        self.assertEqual(reference["pool_novel"], 3)
+        for case in cases:
+            if case["kind"] == "unparseable":
+                continue
+            current = grammar.describe(case["sentence"])["current"]
+            for step in case["witness"]:
+                self.assertEqual(step["current"], current)
+                self.assertIn(step["move"], grammar.describe(current)["moves"])
+                current = step["move"]["result"]
+            self.assertTrue(grammar.describe(current)["solved"])
+        with self.assertRaisesRegex(ValueError, "reachable slots"):
+            generate_grammar_cases(123, 5, novel=4)
+
+    def test_cli_runs_grammar_with_novel_sentences(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "results.json"
+            process = subprocess.run(
+                [sys.executable, str(Path(__file__).with_name("benchmark.py")),
+                 "--system", "grammar", "--targets", "3", "--repeats", "1",
+                 "--novel-sentences", "1", "--output", str(output)],
+                capture_output=True, text=True, timeout=60, check=True,
+            )
+            report = json.loads(output.read_text(encoding="utf-8"))
+            rejected = subprocess.run(
+                [sys.executable, str(Path(__file__).with_name("benchmark.py")),
+                 "--novel-sentences", "1", "--output", str(output)],
+                capture_output=True, text=True, timeout=60,
+            )
+        self.assertIn("Results saved", process.stdout)
+        self.assertEqual(report["configuration"]["novel_sentences"], 1)
+        self.assertEqual(report["reference"]["pool_novel"], 1)
+        self.assertTrue(any(row["kind"] == "novel" for row in report["trials"]))
+        self.assertEqual(len(report["trials"]), 6)
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn("--novel-sentences", rejected.stderr)
 
     def test_menu_order_arm_is_reproducible_and_audited(self):
         def run_with(menu_order):
