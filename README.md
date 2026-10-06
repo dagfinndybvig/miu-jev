@@ -859,6 +859,9 @@ benchmark-results.json measured sample with per-trial evidence
 benchmark-results-lambda.json measured lambda hint-ablation sample
 benchmark-results-lambda-order-fixed.json measured lambda position-bias reference (fixed order)
 benchmark-results-lambda-order-shuffled.json measured lambda position-bias sample (shuffled menus)
+benchmark-results-lambda-wrong-hint.json measured lambda wrong-hint deference sample
+benchmark-results-lambda-tournament-fixed.json measured lambda tournament-stress reference (fixed order)
+benchmark-results-lambda-tournament-shuffled.json measured lambda tournament-stress sample (shuffled menus)
 ```
 
 The Python server is stateless with respect to a run. The browser sends the
@@ -1135,6 +1138,8 @@ python benchmark.py --system lambda --output lambda-baseline.json
 python benchmark.py --system lambda --providers ollama typesafe --hint-ablation --output lambda-results.json
 python benchmark.py --system lambda --providers ollama --menu-order shuffled --output lambda-shuffled.json
 python benchmark.py --system lambda --novel-terms 3 --providers ollama --output lambda-novel.json
+python benchmark.py --system lambda --providers ollama typesafe --wrong-hint --menu-order shuffled --output lambda-wrong-hint.json
+python benchmark.py --system lambda --providers ollama typesafe --targets 3 --tournament-terms 2 --output lambda-tournament.json
 ```
 
 The TypeSafe command sends only generated MIU benchmark inputs to the hosted
@@ -1280,6 +1285,57 @@ for both policies; Nimble diverged in 1/6 guided and 2/6 model-only trials
 without changing any outcome. The earlier ad-hoc reversed-menu probe is now
 reproduced by checked-in evidence. Menus still never exceed three options, so
 the arm stays blunt until tournament-stressing terms land (TODO item 3).
+
+### Measured wrong-hint sample: 6 October 2026
+
+The checked-in [wrong-hint report](benchmark-results-lambda-wrong-hint.json)
+holds 180 trials: the lambda pool under shuffled menus, with `--wrong-hint`
+adding model/guided arms for both providers whose hint-on menus annotate the
+diverging Ω self-loop contraction as **recommended** — descriptive text only;
+legality stays server-owned. Reproduce it:
+
+```powershell
+python benchmark.py --system lambda --providers ollama typesafe --targets 5 --repeats 3 --max-steps 12 --wrong-hint --menu-order shuffled --output lambda-wrong-hint.json
+```
+
+**Zero deference.** In every trap-state decision across both providers and
+both policies — including trials where the recommended self-loop was
+presented first — the raw choice was the trap-escaping contraction; no arm
+followed the bad hint, and every trap trial found the normal form. The
+annotation demonstrably reached the providers (the evidence records the
+`· recommended` labels and the per-entry `wrong_hint` ids). Both models
+exercise judgment over the teacher here, so the textbook-versus-exercises
+distinction rests on recall, not deference. Caveat: one trap shape and one
+bad hint; a curriculum of wrong hints over novel terms would sharpen it.
+
+### Measured tournament sample: 6 October 2026
+
+The checked-in tournament pair —
+[fixed](benchmark-results-lambda-tournament-fixed.json) and
+[shuffled](benchmark-results-lambda-tournament-shuffled.json) — holds 108
+trials each: two majority-losing terms (27-move menus holding one two-step
+outer discard, plus 18 instant-cycle Ω self-loops or 26 budget-wasting
+identities) alongside the standard pool. Reproduce either side:
+
+```powershell
+python benchmark.py --system lambda --providers ollama typesafe --targets 3 --tournament-terms 2 --repeats 3 --max-steps 12 --menu-order fixed --output lambda-tournament-fixed.json
+python benchmark.py --system lambda --providers ollama typesafe --targets 3 --tournament-terms 2 --repeats 3 --max-steps 12 --menu-order shuffled --output lambda-tournament-shuffled.json
+```
+
+**Jev finds the needle in the haystack; Ollama cannot enter the arena.**
+TypeSafe solved all 12 tournament trials per run in exactly the two
+reference steps, model-only and guided. Under fixed order the discard is
+also the first menu entry, so the shuffled run breaks the confound: Jev
+still chose the discard in 6/6 decisions per policy while it was never in
+the first slot — content, not position. The local provider failed
+explicitly on every tournament trial (HTTP 400/413): a 26-move group needs
+at least ~17KB even with compact criteria, while ~11KB was accepted and
+~17KB rejected, so the 26-choice tournament path is unreachable in
+practice on Ollama 0.35.1 — recorded as provider errors, never silently
+replaced. The hosted endpoint accepted the ~75KB hard-term request and
+rejected a ~117KB one during pool calibration, which sized the compact soft
+term. Random baselines confirm the majority loses (2/6 found); the
+heuristic baseline takes the discard (6/6, 2.0 steps).
 
 ## Scope
 

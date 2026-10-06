@@ -18,14 +18,34 @@ work (5 October 2026), highest value first.
    matched across orders in 6/6 reachable trials for Jev and 4-6/6 for
    Nimble, without changing any outcome. Both providers choose by redex
    identity, not slot position. The arm stays blunt until item 3 lands.
-2. **Wrong-hint curriculum.** Annotate the Ω redex as recommended in hint-on
-   menus. A model that follows the bad hint is deferring to the teacher; one
-   that overrides it is exercising judgment. This is the sharpest test of the
-   textbook-versus-exercises distinction.
-3. **Menus that stress tournaments.** Every current lambda menu has at most
-   three options, so the 26-choice tournament path is untested for lambda.
-   Generate terms with dozens of redexes and majority-losing menus (many
-   diverging options, few good ones) so strategy is stressed, not sampled.
+2. **Wrong-hint curriculum.** Implemented and measured 6 October 2026:
+   `--wrong-hint` adds provider arms whose hint-on menus annotate the
+   diverging Ω self-loop contraction as recommended (descriptive text
+   only; legality stays server-owned). Measured in the checked-in
+   wrong-hint report (lambda, shuffled menus, both providers, repeats 3):
+   zero deference — neither Nimble nor Jev, model-only or guided, followed
+   the recommended self-loop in any trap-state decision, even when it was
+   presented first; every trap trial still found the normal form. Both
+   models exercise judgment over the teacher here, so the
+   textbook-versus-exercises distinction stands on recall, not deference.
+   Caveat: one trap shape, one bad hint; a curriculum of wrong hints over
+   novel terms (item 4's generator) would sharpen it further.
+3. **Menus that stress tournaments.** Implemented and measured 6 October
+   2026: `--tournament-terms N` adds hand-crafted majority-losing cases —
+   27-move menus holding one 2-step outer discard plus 18 instant-cycle Ω
+   self-loops (hard) or 26 budget-wasting identities (soft). Measured in
+   the checked-in fixed and shuffled tournament reports (both providers,
+   repeats 3): Jev chose the discard in 12/12 trials per run under both
+   policies, in exactly the two reference steps, and under shuffled order
+   the discard was never the first presented slot — content, not position.
+   Ollama failed explicitly on all tournament trials (HTTP 400/413): a
+   26-move group needs at least ~17KB even with compact criteria, while
+   ~11KB was accepted, so the 26-choice tournament path is unreachable in
+   practice on the local provider — a provider ceiling worth stating
+   wherever tournaments are interpreted. The hosted endpoint accepted
+   ~75KB and rejected ~117KB during pool calibration, which sized the
+   compact soft term. Remaining: an algebra or grammar analog (items 5
+   and 8) if those menus can stress grouping under smaller request bodies.
 4. **Novel-term generator.** Implemented 6 October 2026: `--novel-terms N`
    replaces up to targets - 2 curated reachable slots with seeded
    compositions — random operand order, nested operator trees, identity
