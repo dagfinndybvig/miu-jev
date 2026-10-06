@@ -40,6 +40,25 @@ def church(n: int) -> str:
     return rf"(\f.\x. {body})"
 
 
+def _wrap_identities(inner: str, count: int) -> str:
+    for _ in range(count):
+        inner = rf"(\z. z) ({inner})"
+    return inner
+
+
+def tournament_terms() -> list[tuple[str, str]]:
+    """Hand-crafted majority-losing menus that stress the tournament path.
+    One cheap outer discard reaches the normal form in two steps; the rest of
+    the menu is a majority of losing options — instant-cycle Ω self-loops in
+    the hard term, budget-wasting identity chains in the soft one — so a
+    provider must survive two-choice grouping to find the winner."""
+    discard = r"(\a.\b. b)"
+    omegas = " ".join([OMEGA_ATOM] * 18)
+    hard = rf"{discard} ({_wrap_identities(omegas, 8)}) x"
+    soft = rf"{discard} ({_wrap_identities('x', 40)}) x"
+    return [(hard, "tournament"), (soft, "tournament")]
+
+
 def lambda_terms() -> list[tuple[str, str]]:
     """Curated lambda terms: reachable arithmetic, strategy traps that only
     normal order escapes, and duplication-heavy growth terms."""
@@ -61,6 +80,7 @@ def lambda_terms() -> list[tuple[str, str]]:
         (r"(\x. x x x x) (\y. y)", "growth"),
         (r"(\p.\q. p q q) ((\z. z z) (\w. w))", "growth"),
     ])
+    terms.extend(tournament_terms())
     return terms
 
 
@@ -207,15 +227,21 @@ def generate_cases(
 
 
 def generate_lambda_cases(
-    seed: int, count: int, novel: int = 0,
+    seed: int, count: int, novel: int = 0, tournament: int = 0,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     rng = random.Random(seed)
     pool = lambda_terms()
     reachable = [term for term, kind in pool if kind == "reachable"]
     traps = [term for term, kind in pool if kind == "trap"]
     growth = [term for term, kind in pool if kind == "growth"]
-    for group in (reachable, traps, growth):
+    tournaments = [term for term, kind in pool if kind == "tournament"]
+    for group in (reachable, traps, growth, tournaments):
         rng.shuffle(group)
+    if tournament > len(tournaments):
+        raise ValueError(
+            f"Lambda pool has {len(tournaments)} tournament terms; "
+            "lower --tournament-terms or extend tournament_terms()"
+        )
     if novel > count - 2:
         raise ValueError(
             "More novel terms requested than reachable slots; "
@@ -231,6 +257,7 @@ def generate_lambda_cases(
     ))
     selected.append((traps[0], "trap"))
     selected.append((growth[0], "growth"))
+    selected.extend(zip(tournaments[:tournament], ["tournament"] * tournament))
     rng.shuffle(selected)
 
     cases = []
@@ -251,6 +278,7 @@ def generate_lambda_cases(
     return cases, {
         "pool_reachable": len(reachable), "pool_trap": len(traps), "pool_growth": len(growth),
         "pool_novel": len(novel_pairs),
+        "pool_tournament": len(tournaments),
         "scope": "Normal-order reference paths, which reach a normal form whenever one exists.",
     }
 
@@ -458,6 +486,11 @@ def main() -> None:
         help="lambda only: seeded compositions no textbook contains, "
              "replacing up to targets - 2 reachable slots",
     )
+    parser.add_argument(
+        "--tournament-terms", type=int, default=0,
+        help="lambda only: adds majority-losing cases whose menus exceed the "
+             "26-choice tournament path",
+    )
     parser.add_argument("--repeats", type=int, default=3)
     parser.add_argument("--max-steps", type=int, default=20)
     parser.add_argument("--max-length", type=int, default=None)
@@ -499,6 +532,15 @@ def main() -> None:
             "--novel-terms requires --system lambda, a non-negative count, "
             "and at most targets - 2 terms"
         )
+    if (
+        args.tournament_terms < 0
+        or (args.tournament_terms and args.system != "lambda")
+        or (args.system == "lambda" and args.tournament_terms > len(tournament_terms()))
+    ):
+        parser.error(
+            "--tournament-terms requires --system lambda, a non-negative count, "
+            "and at most the size of the tournament pool"
+        )
     if args.wrong_hint and args.system != "lambda":
         parser.error("--wrong-hint requires --system lambda")
     for provider in args.providers:
@@ -513,6 +555,7 @@ def main() -> None:
     else:
         cases, reference = generate_lambda_cases(
             args.seed, args.targets, novel=args.novel_terms,
+            tournament=args.tournament_terms,
         )
 
     strategies: list[tuple[str, str, str | None, str | None, bool, bool]] = [

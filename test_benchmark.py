@@ -330,6 +330,70 @@ class BenchmarkTests(unittest.TestCase):
             {row["strategy"] for row in report["trials"]}, {"random", "heuristic"},
         )
 
+    def test_tournament_terms_stress_the_tournament_path(self):
+        terms = [term for term, kind in benchmark.lambda_terms() if kind == "tournament"]
+        self.assertEqual(len(terms), 2)
+        menus = []
+        for term in terms:
+            state = lambda_calc.describe(term)
+            self.assertGreater(len(state["moves"]), 26)
+            path, normal_form = lambda_calc.normal_order_witness(term, max_steps=100)
+            self.assertEqual(len(path), 2)
+            self.assertEqual(normal_form, "x")
+            current = state["current"]
+            for step in path:
+                self.assertEqual(step["current"], current)
+                self.assertIn(step["move"], lambda_calc.describe(current)["moves"])
+                current = step["move"]["result"]
+            self.assertEqual(current, "x")
+            menus.append(state)
+        self.assertGreater(
+            sum(1 for move in menus[0]["moves"] if move["result"] == menus[0]["current"]),
+            0,
+        )
+
+    def test_lambda_cases_add_tournament_terms(self):
+        cases, reference = generate_lambda_cases(123, 3, tournament=2)
+        self.assertEqual(
+            sorted(case["kind"] for case in cases),
+            ["growth", "impossible", "reachable", "tournament", "tournament", "trap"],
+        )
+        self.assertEqual(reference["pool_tournament"], 2)
+        for case in cases:
+            if case["kind"] == "impossible":
+                continue
+            current = lambda_calc.describe(case["term"])["current"]
+            for step in case["witness"]:
+                self.assertEqual(step["current"], current)
+                self.assertIn(step["move"], lambda_calc.describe(current)["moves"])
+                current = step["move"]["result"]
+            self.assertEqual(current, case["goal"])
+        with self.assertRaisesRegex(ValueError, "tournament terms"):
+            generate_lambda_cases(123, 3, tournament=3)
+
+    def test_cli_runs_tournament_terms(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "results.json"
+            process = subprocess.run(
+                [sys.executable, str(Path(__file__).with_name("benchmark.py")),
+                 "--system", "lambda", "--targets", "3", "--repeats", "1",
+                 "--tournament-terms", "1", "--output", str(output)],
+                capture_output=True, text=True, timeout=60, check=True,
+            )
+            report = json.loads(output.read_text(encoding="utf-8"))
+            rejected = subprocess.run(
+                [sys.executable, str(Path(__file__).with_name("benchmark.py")),
+                 "--system", "lambda", "--tournament-terms", "3",
+                 "--output", str(output)],
+                capture_output=True, text=True, timeout=60,
+            )
+        self.assertIn("Results saved", process.stdout)
+        self.assertEqual(report["configuration"]["tournament_terms"], 1)
+        self.assertTrue(any(row["kind"] == "tournament" for row in report["trials"]))
+        self.assertEqual(len(report["trials"]), 10)
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn("--tournament-terms", rejected.stderr)
+
     def test_cli_records_menu_order_configuration(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "results.json"
