@@ -40,7 +40,7 @@ SYSTEMS = ("miu", "algebra", "lambda", "grammar")
 
 def validate_system(value: Any) -> str:
     if not isinstance(value, str) or value not in SYSTEMS:
-        raise ValueError("system must be miu, algebra, or lambda")
+        raise ValueError("system must be miu, algebra, lambda, or grammar")
     return value
 
 
@@ -359,13 +359,15 @@ def decision_request(
             f"growth-only trap: {'yes' if is_growth_only_trap(move['result']) else 'no'}; "
         ) if system == "miu" else (
             f"position: {move['position']}; justification: {move['detail']}; "
-            f"solved: {move['solved']}; structural progress cost: {move['progress']}; "
-            + (f"duplication cost: {move['duplication']}; redexes after: {move['redexes']}; "
+            f"solved: {move['solved']}; "
+            + (f"structural progress cost: {move['progress']}; "
+               f"duplication cost: {move['duplication']}; redexes after: {move['redexes']}; "
                if system == "lambda" else
                f"constituents after: {move['progress']}; "
                f"keeps a complete parse reachable: "
                f"{'yes' if move['completable'] else 'no'}; "
-               if system == "grammar" else "")
+               if system == "grammar" else
+               f"structural progress cost: {move['progress']}; ")
         )
         criteria[key] = (
             f"{move['label']}; result: {move['result']}; "
@@ -832,7 +834,10 @@ class RequestHandler(BaseHTTPRequestHandler):
             )
 
     def read_json(self) -> dict[str, Any]:
-        length = int(self.headers.get("Content-Length", "0"))
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError as error:
+            raise ValueError("invalid request body size") from error
         if length <= 0 or length > MAX_BODY_BYTES:
             raise ValueError("invalid request body size")
         try:

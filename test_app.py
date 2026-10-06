@@ -26,6 +26,7 @@ from app import (
     rewrite_opportunities,
     select_move,
     validate_miu,
+    validate_system,
 )
 
 
@@ -83,6 +84,16 @@ class LegalMovesTests(unittest.TestCase):
                     validate_miu(invalid, "current")
         with self.assertRaisesRegex(ValueError, "must not exceed"):
             validate_miu("M" + ("I" * MAX_MIU_LENGTH), "current")
+
+    def test_system_validation_message_lists_every_system(self):
+        for system in ("miu", "algebra", "lambda", "grammar"):
+            self.assertEqual(validate_system(system), system)
+        for invalid in ([], "unknown", None):
+            with self.subTest(invalid=invalid):
+                with self.assertRaisesRegex(
+                    ValueError, "miu, algebra, lambda, or grammar"
+                ):
+                    validate_system(invalid)
 
     def test_rewrite_opportunity_count(self):
         self.assertEqual(rewrite_opportunities("MIIIIUU"), 3)
@@ -285,6 +296,37 @@ class ProviderResponseTests(unittest.TestCase):
         self.assertTrue(any(
             "growth-only trap" in text for text in state["candidate_moves"].values()
         ))
+
+    def test_hint_criteria_match_each_system(self):
+        captured = {}
+
+        def record(request, timeout=0):
+            captured["body"] = json.loads(request.data)
+            return io.BytesIO(json.dumps({"answers": {"next_move": {
+                "choice": "A", "probabilities": {"A": 1},
+            }}}).encode())
+
+        cases = (
+            ("algebra", algebra.describe("2 * (x + 3) = 14")["moves"],
+             "structural progress cost", "constituents after"),
+            ("lambda", lambda_calc.describe("(\\x. x x) (\\y. y)")["moves"],
+             "structural progress cost", "constituents after"),
+            ("grammar", grammar.describe(grammar.DEFAULT_SENTENCE)["moves"],
+             "constituents after", "structural progress cost"),
+        )
+        for system, moves, expected, forbidden in cases:
+            with self.subTest(system=system):
+                with (
+                    patch("app.require_compatible_ollama"),
+                    patch("app.urllib.request.urlopen", side_effect=record),
+                ):
+                    decision_request(
+                        "ollama", "test-model", "model", "state", "goal", [],
+                        moves, 512, system=system,
+                    )
+                texts = captured["body"]["questions"]["next_move"]["criteria"].values()
+                self.assertTrue(any(expected in text for text in texts))
+                self.assertFalse(any(forbidden in text for text in texts))
 
     def test_valid_probability_mapping_for_both_providers(self):
         for provider, keys in (
