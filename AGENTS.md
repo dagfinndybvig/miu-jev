@@ -61,6 +61,8 @@ benchmark-results-lambda-tournament-fixed.json measured lambda tournament-stress
 benchmark-results-lambda-tournament-shuffled.json measured lambda tournament-stress sample (shuffled menus)
 benchmark-results-algebra.json measured algebra comparison sample
 benchmark-results-grammar.json measured grammar comparison sample
+benchmark-results-grammar-attachment-fixed.json measured novel-sentence attachment reference (fixed order)
+benchmark-results-grammar-attachment-shuffled.json measured novel-sentence attachment sample (shuffled menus)
 web/index.html  page structure and settings
 web/styles.css  responsive presentation
 web/app.js      browser state, API calls, controls, and rendering
@@ -396,7 +398,7 @@ command, test fixture, source file, log, or commit.
 growth, Omega) with normal-order reference paths; `--system algebra` and
 `--system grammar` run their curated pools with greedy-guided and
 chart-guided references; `--hint-ablation` adds
-provider arms whose menus carry no precomputed annotations; `--menu-order fixed|reversed|shuffled` presents provider-facing menus reversed or in a per-state seeded shuffle to control position bias, with baselines always on the fixed server order; `--novel-terms N` (lambda) replaces up to targets - 2 curated reachable slots with seeded normalizing compositions that stay ahead of the training curriculum; `--wrong-hint` (lambda) adds provider arms annotating the diverging Ω self-loop as recommended (descriptive text only); `--tournament-terms N` (lambda) adds majority-losing tournament-stress cases.
+provider arms whose menus carry no precomputed annotations; `--menu-order fixed|reversed|shuffled` presents provider-facing menus reversed or in a per-state seeded shuffle to control position bias, with baselines always on the fixed server order; `--novel-terms N` (lambda) replaces up to targets - 2 curated reachable slots with seeded normalizing compositions that stay ahead of the training curriculum; `--wrong-hint` (lambda) adds provider arms annotating the diverging Ω self-loop as recommended (descriptive text only); `--tournament-terms N` (lambda) adds majority-losing tournament-stress cases; `--novel-sentences N` (grammar) replaces up to targets - 2 curated reachable slots with seeded ambiguous compositions for attachment probing.
 Model comparisons require explicit `--providers ollama` or
 `--providers ollama typesafe`. Apply the same execution budgets to every
 strategy, keep impossible-target exploration out of reachable success rates,

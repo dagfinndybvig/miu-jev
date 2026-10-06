@@ -75,20 +75,20 @@ work (5 October 2026), highest value first.
 
 ## Grammar experiments
 
-7. **Attachment-preference probe.** Ambiguous sentences have several complete
-   parses and every one is a solved state; which one a model steers toward is
-   a semantics preference, not a syntax requirement. Measure whether the
-   choice between VP and NP attachment is consistent across sentences, menu
-   orders, and providers.
-   Ad-hoc live probe, 5 October 2026 (not checked-in evidence): on
-   `the man saw the dog with the telescope`, both Nimble (local) and Jev
-   (hosted) chose VP attachment in every trial, under both model-only and
-   guided policies. Nimble was bit-identical across trials and chose
-   `VP → V NP` over `NP → NP PP` at 0.93; Jev sampled slightly and committed
-   earlier at 0.50–0.94, sometimes before the PP was even built. Both match
-   the corpus default for instrument PPs, but the sentence is verbatim in
-   every linguistics textbook, so this may measure recall (see item 4).
-   Run it on novel sentences before drawing conclusions.
+7. **Attachment-preference probe.** Measured 6 October 2026 on novel
+   sentences (checked-in fixed and shuffled attachment reports, both
+   providers, repeats 3, four seeded ambiguous compositions no textbook
+   contains): both Nimble and Jev chose VP attachment in 12/12 trials per
+   arm — model-only and guided — across all sentences and both menu orders,
+   while the seeded random baseline split 4/12 VP vs 8/12 NP, near chance
+   for two parses. Ambiguous sentences have several complete parses and
+   every one is a solved state, so this is a semantics preference, not a
+   syntax requirement. The 5 October ad-hoc probe on the verbatim textbook
+   sentence agreed (VP in every trial), so the preference survives the
+   recall objection. Nuance: the compositions reuse the toy lexicon, so a
+   general instrumental-PP prior cannot be excluded — a semantics claim
+   this experiment cannot and need not settle. The menu-order control
+   confirms the choice is content-driven, not positional.
 8. **Dead-end avoidance.** Measured 6 October 2026 (checked-in grammar
    report): the curated dead-end sentence `the man saw the dog and the
    telescope` is fully parseable, but the greedy-looking VP-then-S path

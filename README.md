@@ -864,6 +864,8 @@ benchmark-results-lambda-tournament-fixed.json measured lambda tournament-stress
 benchmark-results-lambda-tournament-shuffled.json measured lambda tournament-stress sample (shuffled menus)
 benchmark-results-algebra.json measured algebra comparison sample
 benchmark-results-grammar.json measured grammar comparison sample
+benchmark-results-grammar-attachment-fixed.json measured novel-sentence attachment reference (fixed order)
+benchmark-results-grammar-attachment-shuffled.json measured novel-sentence attachment sample (shuffled menus)
 ```
 
 The Python server is stateless with respect to a run. The browser sends the
@@ -1382,6 +1384,33 @@ at leaf states), so grammar cannot stress the 26-choice tournament path;
 that stress remains lambda-only.
 
 The stateless caveat applies to both samples: fresh selections, not learning.
+
+### Measured novel-attachment sample: 6 October 2026
+
+The checked-in attachment pair —
+[fixed](benchmark-results-grammar-attachment-fixed.json) and
+[shuffled](benchmark-results-grammar-attachment-shuffled.json) — holds 108
+trials each: four seeded ambiguous sentences no textbook contains (`a dog
+chased a park near the telescope` and kin), both providers, both policies,
+both baselines, and both menu orders. Reproduce either side:
+
+```powershell
+python benchmark.py --system grammar --novel-sentences 4 --targets 6 --providers ollama typesafe --repeats 3 --max-steps 20 --menu-order fixed --output grammar-attachment-fixed.json
+python benchmark.py --system grammar --novel-sentences 4 --targets 6 --providers ollama typesafe --repeats 3 --max-steps 20 --menu-order shuffled --output grammar-attachment-shuffled.json
+```
+
+**VP attachment everywhere, on sentences the models cannot have read.**
+Both Nimble and Jev steered every completed parse to VP attachment —
+12/12 trials per arm, model-only and guided, across all four sentences and
+both menu orders — while the seeded random baseline split 4/12 VP vs 8/12
+NP, near chance for two parses. Every parse of an ambiguous sentence is a
+solved state, so this is a semantics preference, not a syntax requirement;
+the earlier ad-hoc probe on the verbatim textbook sentence agreed, and the
+novel compositions remove the recall objection. The remaining nuance is
+honest: the compositions reuse the toy lexicon, so a general
+instrumental-PP prior cannot be excluded — a semantics claim this
+experiment cannot and need not settle. The stateless caveat applies: fresh
+selections, not learning.
 
 ## Scope
 
