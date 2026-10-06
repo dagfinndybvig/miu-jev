@@ -51,11 +51,15 @@ def tournament_terms() -> list[tuple[str, str]]:
     One cheap outer discard reaches the normal form in two steps; the rest of
     the menu is a majority of losing options — instant-cycle Ω self-loops in
     the hard term, budget-wasting identity chains in the soft one — so a
-    provider must survive two-choice grouping to find the winner."""
+    provider must survive grouping to find the winner. Both terms stay
+    compact so a 27-move single-group request fits the hosted provider's
+    observed request-size ceiling (~75KB accepted, ~117KB rejected); the
+    local provider rejects tournament-sized groups outright (HTTP 400/413).
+    """
     discard = r"(\a.\b. b)"
     omegas = " ".join([OMEGA_ATOM] * 18)
     hard = rf"{discard} ({_wrap_identities(omegas, 8)}) x"
-    soft = rf"{discard} ({_wrap_identities('x', 40)}) x"
+    soft = rf"{discard} ({_wrap_identities('x', 26)}) x"
     return [(hard, "tournament"), (soft, "tournament")]
 
 
