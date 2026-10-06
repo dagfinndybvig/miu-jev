@@ -10,9 +10,14 @@ work (5 October 2026), highest value first.
    reversed or in a per-state seeded shuffle, records the presented order in
    trial evidence, and keeps baselines on the fixed server order. The ad-hoc
    reversed-menu probe (both models avoided the Ω redex even when it was
-   listed first) is now reproducible inside reports. Remaining: run the
-   shuffled arm against both providers on the lambda pool and check in the
-   measured position-bias evidence.
+   listed first) is now measured as checked-in evidence: the 6 October 2026
+   fixed and shuffled lambda reports (72 trials each, both providers,
+   targets 5, repeats 2). Success was identical under both orders; raw
+   first-position picks fell from 68/84 (fixed) to 30/85 (shuffled), near
+   chance for menus of two to three options, and applied move sequences
+   matched across orders in 6/6 reachable trials for Jev and 4-6/6 for
+   Nimble, without changing any outcome. Both providers choose by redex
+   identity, not slot position. The arm stays blunt until item 3 lands.
 2. **Wrong-hint curriculum.** Annotate the Ω redex as recommended in hint-on
    menus. A model that follows the bad hint is deferring to the teacher; one
    that overrides it is exercising judgment. This is the sharpest test of the

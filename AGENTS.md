@@ -54,6 +54,8 @@ benchmark.py    controlled baseline/provider comparisons and reference paths
 test_benchmark.py benchmark witness, budget, and metric tests
 benchmark-results.json measured MIU sample with per-trial evidence
 benchmark-results-lambda.json measured lambda hint-ablation sample
+benchmark-results-lambda-order-fixed.json measured lambda position-bias reference (fixed order)
+benchmark-results-lambda-order-shuffled.json measured lambda position-bias sample (shuffled menus)
 web/index.html  page structure and settings
 web/styles.css  responsive presentation
 web/app.js      browser state, API calls, controls, and rendering

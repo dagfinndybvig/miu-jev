@@ -857,6 +857,8 @@ benchmark.py    controlled comparisons with bounded reference paths
 test_benchmark.py benchmark generation, safety, and measurement tests
 benchmark-results.json measured sample with per-trial evidence
 benchmark-results-lambda.json measured lambda hint-ablation sample
+benchmark-results-lambda-order-fixed.json measured lambda position-bias reference (fixed order)
+benchmark-results-lambda-order-shuffled.json measured lambda position-bias sample (shuffled menus)
 ```
 
 The Python server is stateless with respect to a run. The browser sends the
@@ -1253,6 +1255,31 @@ first menu entry, so first-option bias cannot be excluded from the report
 alone. A separate ad-hoc live probe that reversed the menu order — presenting
 the Ω redex first — had both models pick the trap-escaping contraction every
 time, but that probe is not part of this checked-in evidence.
+
+### Measured menu-order sample: 6 October 2026
+
+The checked-in position-bias pair — the [fixed-order
+report](benchmark-results-lambda-order-fixed.json) and the [shuffled-order
+report](benchmark-results-lambda-order-shuffled.json) — holds 72 trials each:
+the same lambda pool, seed, providers, and budgets, differing only in
+`--menu-order`. Reproduce either side:
+
+```powershell
+python benchmark.py --system lambda --providers ollama typesafe --targets 5 --repeats 2 --max-steps 12 --menu-order fixed --output lambda-order-fixed.json
+python benchmark.py --system lambda --providers ollama typesafe --targets 5 --repeats 2 --max-steps 12 --menu-order shuffled --output lambda-order-shuffled.json
+```
+
+Success was identical under both orders: every reachable, trap, and growth
+case was found by both providers under both policies (mean steps 6.0 / 2.0 /
+4.0), and all Ω trials stopped on cycle. **Choices track redex identity, not
+slot position.** Raw first-position picks fell from 68/84 under the fixed
+order (where the leftmost-outermost redex is always first) to 30/85 under the
+shuffled order — near chance for menus of two to three options — and Jev's
+applied move sequences were identical across orders in 6/6 reachable trials
+for both policies; Nimble diverged in 1/6 guided and 2/6 model-only trials
+without changing any outcome. The earlier ad-hoc reversed-menu probe is now
+reproduced by checked-in evidence. Menus still never exceed three options, so
+the arm stays blunt until tournament-stressing terms land (TODO item 3).
 
 ## Scope
 
