@@ -113,6 +113,21 @@ class LambdaRewriteTests(unittest.TestCase):
         self.assertEqual(len(state["moves"]), 1)
         self.assertEqual(state["moves"][0]["position"], "root")
 
+    def test_normal_order_witness_stops_inconclusively_when_limits_exclude_every_move(self):
+        # A single redex whose contraction duplicates a ~180-node argument;
+        # the result exceeds the node and character bounds, so the menu is
+        # empty on an unsolved state. The witness must stop inconclusively,
+        # not crash and not claim divergence.
+        argument = "(λf.λx. " + "f (" * 90 + "x" + ")" * 90 + ")"
+        term = f"(λx. x x) {argument}"
+        state = lambda_calc.describe(term)
+        self.assertFalse(state["solved"])
+        self.assertEqual(state["moves"], [])
+        self.assertEqual(state["omitted_for_limits"], 1)
+        path, normal_form = lambda_calc.normal_order_witness(term)
+        self.assertEqual(path, [])
+        self.assertIsNone(normal_form)
+
     def test_inner_contractions_preserve_their_context(self):
         state = lambda_calc.describe("(λx. x) ((λy. y) z)")
         self.assertEqual(

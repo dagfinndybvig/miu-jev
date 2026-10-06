@@ -21,10 +21,14 @@ work (5 October 2026), highest value first.
    three options, so the 26-choice tournament path is untested for lambda.
    Generate terms with dozens of redexes and majority-losing menus (many
    diverging options, few good ones) so strategy is stressed, not sampled.
-4. **Novel-term generator.** Canonical Church arithmetic is plausibly verbatim
-   in training corpora, so those cases may measure recall. Add seeded
-   compositions from the grammar that no textbook contains, so the exercises
-   stay ahead of the curriculum the models already read.
+4. **Novel-term generator.** Implemented 6 October 2026: `--novel-terms N`
+   replaces up to targets - 2 curated reachable slots with seeded
+   compositions — random operand order, nested operator trees, identity
+   applications, constant wrappers — each verified to normalize within the
+   reference-step bound and distinct from the curated pool. Canonical Church
+   arithmetic is plausibly verbatim in training corpora, so curated cases may
+   measure recall. Remaining: run the novel pool against both providers and
+   compare against the curated reachable success rates.
 
 ## Lower priority
 

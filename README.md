@@ -1132,6 +1132,7 @@ python benchmark.py --providers ollama typesafe --output comparison-results.json
 python benchmark.py --system lambda --output lambda-baseline.json
 python benchmark.py --system lambda --providers ollama typesafe --hint-ablation --output lambda-results.json
 python benchmark.py --system lambda --providers ollama --menu-order shuffled --output lambda-shuffled.json
+python benchmark.py --system lambda --novel-terms 3 --providers ollama --output lambda-novel.json
 ```
 
 The TypeSafe command sends only generated MIU benchmark inputs to the hosted
@@ -1143,7 +1144,7 @@ overridden with `--ollama-model` and `--typesafe-model`.
 The lambda mode samples a curated pool: Church-arithmetic terms with
 normal-order reference paths, strategy traps that only outer-first reduction
 escapes, duplication-heavy growth terms, and Ω as deliberate
-impossible-target exploration. Reference steps are normal-order paths, which
+impossible-target exploration. `--novel-terms N` replaces up to targets - 2 reachable slots with seeded compositions no textbook contains — random operand order, nested operator trees, identity applications, and constant wrappers — each verified to normalize within the reference-step bound. Reference steps are normal-order paths, which
 reach a normal form whenever one exists. `--hint-ablation` adds model and
 guided arms whose provider menus carry **no precomputed annotations** — no
 solved flags, duplication costs, or search guidance — so raw model judgment

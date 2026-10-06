@@ -12,6 +12,7 @@ from pathlib import Path
 import platform
 import random
 import statistics
+import sys
 import time
 from typing import Any
 
@@ -57,6 +58,71 @@ def lambda_terms() -> list[tuple[str, str]]:
         (r"(\p.\q. p q q) ((\z. z z) (\w. w))", "growth"),
     ])
     return terms
+
+
+NOVEL_MAX_REFERENCE_STEPS = 14
+NOVEL_MIN_REFERENCE_STEPS = 3
+
+
+def _novel_tree(rng: random.Random) -> str:
+    """One seeded composition: Church arithmetic recombined through random
+    operand order, nested operator trees, identity applications, and
+    constant wrappers — shapes no textbook prints."""
+
+    def numeral() -> str:
+        return church(rng.randint(0, 3))
+
+    def node(depth: int) -> str:
+        if depth <= 0 or rng.random() < 0.3:
+            return numeral()
+        choice = rng.random()
+        if choice < 0.5:
+            operator = rng.choice((LAMBDA_ADD, LAMBDA_MUL))
+            left, right = node(depth - 1), node(depth - 1)
+            if rng.random() < 0.5:
+                left, right = right, left
+            return f"({operator} {left} {right})"
+        if choice < 0.75:
+            return f"({LAMBDA_SUCC} {node(depth - 1)})"
+        if choice < 0.9:
+            return rf"(\z. z) {node(depth - 1)}"
+        return rf"(\p.\q. q) {numeral()} {node(depth - 1)}"
+
+    return node(3)
+
+
+def novel_lambda_terms(
+    seed: int, count: int,
+    max_reference_steps: int = NOVEL_MAX_REFERENCE_STEPS,
+) -> list[tuple[str, str]]:
+    """Seeded lambda compositions that stay ahead of the training curriculum.
+    Every term normalizes within the reference-step bound and is distinct
+    from the curated pool, so exercises are not verbatim recall."""
+    rng = random.Random(seed)
+    seen = {term for term, _ in lambda_terms()}
+    results: list[tuple[str, str]] = []
+    attempts = 0
+    while len(results) < count:
+        attempts += 1
+        if attempts > count * 200:
+            raise ValueError(
+                "Novel term generation exhausted its attempt budget; "
+                "lower --novel-terms or extend the composition grammar"
+            )
+        try:
+            canonical = lambda_calc.format_term(lambda_calc.parse_term(_novel_tree(rng)))
+            path, normal_form = lambda_calc.normal_order_witness(canonical, max_steps=100)
+        except ValueError:
+            continue
+        if (
+            normal_form is None
+            or not NOVEL_MIN_REFERENCE_STEPS <= len(path) <= max_reference_steps
+            or canonical in seen
+        ):
+            continue
+        seen.add(canonical)
+        results.append((canonical, "novel"))
+    return results
 
 
 def target_distance(value: str, target: str) -> int:
@@ -136,7 +202,9 @@ def generate_cases(
     }
 
 
-def generate_lambda_cases(seed: int, count: int) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+def generate_lambda_cases(
+    seed: int, count: int, novel: int = 0,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     rng = random.Random(seed)
     pool = lambda_terms()
     reachable = [term for term, kind in pool if kind == "reachable"]
@@ -144,11 +212,19 @@ def generate_lambda_cases(seed: int, count: int) -> tuple[list[dict[str, Any]], 
     growth = [term for term, kind in pool if kind == "growth"]
     for group in (reachable, traps, growth):
         rng.shuffle(group)
-    if count - 2 > len(reachable):
+    if novel > count - 2:
+        raise ValueError(
+            "More novel terms requested than reachable slots; "
+            "raise --targets or lower --novel-terms"
+        )
+    if count - 2 - novel > len(reachable):
         raise ValueError(
             f"Lambda pool has {len(reachable)} reachable terms; lower --targets or extend lambda_terms()"
         )
-    selected = list(zip(reachable[:count - 2], ["reachable"] * (count - 2)))
+    novel_pairs = novel_lambda_terms(seed, novel) if novel else []
+    selected = novel_pairs + list(zip(
+        reachable[:count - 2 - novel], ["reachable"] * (count - 2 - novel),
+    ))
     selected.append((traps[0], "trap"))
     selected.append((growth[0], "growth"))
     rng.shuffle(selected)
@@ -170,6 +246,7 @@ def generate_lambda_cases(seed: int, count: int) -> tuple[list[dict[str, Any]], 
     })
     return cases, {
         "pool_reachable": len(reachable), "pool_trap": len(traps), "pool_growth": len(growth),
+        "pool_novel": len(novel_pairs),
         "scope": "Normal-order reference paths, which reach a normal form whenever one exists.",
     }
 
@@ -352,6 +429,8 @@ def summarize(trials: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def main() -> None:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(errors="backslashreplace")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--system", choices=("miu", "lambda"), default="miu")
     parser.add_argument("--providers", nargs="+", choices=tuple(DEFAULT_MODELS), default=[])
@@ -359,6 +438,11 @@ def main() -> None:
     parser.add_argument("--typesafe-model", default=DEFAULT_MODELS["typesafe"])
     parser.add_argument("--seed", type=int, default=20261002)
     parser.add_argument("--targets", type=int, default=6)
+    parser.add_argument(
+        "--novel-terms", type=int, default=0,
+        help="lambda only: seeded compositions no textbook contains, "
+             "replacing up to targets - 2 reachable slots",
+    )
     parser.add_argument("--repeats", type=int, default=3)
     parser.add_argument("--max-steps", type=int, default=20)
     parser.add_argument("--max-length", type=int, default=None)
@@ -385,6 +469,15 @@ def main() -> None:
             "Use positive budgets, BFS depth >= 3, and max length from 8 "
             f"to {absolute_limit} for the {args.system} system"
         )
+    if (
+        args.novel_terms < 0
+        or (args.novel_terms and args.system != "lambda")
+        or (args.system == "lambda" and args.novel_terms > args.targets - 2)
+    ):
+        parser.error(
+            "--novel-terms requires --system lambda, a non-negative count, "
+            "and at most targets - 2 terms"
+        )
     for provider in args.providers:
         if provider == "ollama":
             require_compatible_ollama()
@@ -395,7 +488,9 @@ def main() -> None:
             args.seed, args.targets, args.max_length, args.bfs_depth, args.bfs_states,
         )
     else:
-        cases, reference = generate_lambda_cases(args.seed, args.targets)
+        cases, reference = generate_lambda_cases(
+            args.seed, args.targets, novel=args.novel_terms,
+        )
 
     strategies: list[tuple[str, str, str | None, str | None, bool]] = [
         ("random", "random", None, None, True),

@@ -10,7 +10,10 @@ from unittest.mock import patch
 from app import DecisionError, legal_moves
 import benchmark
 import lambda_calc
-from benchmark import generate_cases, generate_lambda_cases, run_trial, summarize, target_distance
+from benchmark import (
+    generate_cases, generate_lambda_cases, novel_lambda_terms, run_trial,
+    summarize, target_distance,
+)
 
 
 class BenchmarkTests(unittest.TestCase):
@@ -171,6 +174,69 @@ class BenchmarkTests(unittest.TestCase):
         self.assertFalse(result["hints"])
         self.assertEqual(choose.call_args.kwargs["system"], "lambda")
         self.assertEqual(choose.call_args.kwargs["hints"], False)
+
+    def test_novel_terms_stay_ahead_of_the_curriculum(self):
+        first = novel_lambda_terms(123, 4)
+        self.assertEqual(first, novel_lambda_terms(123, 4))
+        curated = {term for term, _ in benchmark.lambda_terms()}
+        terms = [term for term, _ in first]
+        self.assertEqual([kind for _, kind in first], ["novel"] * 4)
+        self.assertEqual(len(terms), len(set(terms)))
+        for term in terms:
+            self.assertNotIn(term, curated)
+            path, normal_form = lambda_calc.normal_order_witness(term, max_steps=100)
+            self.assertIsNotNone(normal_form)
+            self.assertGreaterEqual(len(path), benchmark.NOVEL_MIN_REFERENCE_STEPS)
+            self.assertLessEqual(len(path), benchmark.NOVEL_MAX_REFERENCE_STEPS)
+            current = lambda_calc.describe(term)["current"]
+            for step in path:
+                self.assertEqual(step["current"], current)
+                self.assertIn(step["move"], lambda_calc.describe(current)["moves"])
+                current = step["move"]["result"]
+            self.assertEqual(current, normal_form)
+
+    def test_lambda_cases_mix_novel_and_curated_terms(self):
+        cases, reference = generate_lambda_cases(123, 5, novel=2)
+        self.assertEqual(len(cases), 6)
+        self.assertEqual(
+            sorted(case["kind"] for case in cases),
+            ["growth", "impossible", "novel", "novel", "reachable", "trap"],
+        )
+        self.assertEqual(reference["pool_novel"], 2)
+        for case in cases:
+            if case["kind"] == "impossible":
+                continue
+            current = lambda_calc.describe(case["term"])["current"]
+            for step in case["witness"]:
+                self.assertEqual(step["current"], current)
+                self.assertIn(step["move"], lambda_calc.describe(current)["moves"])
+                current = step["move"]["result"]
+            self.assertEqual(current, case["goal"])
+        with self.assertRaisesRegex(ValueError, "reachable slots"):
+            generate_lambda_cases(123, 5, novel=4)
+
+    def test_cli_runs_keyless_lambda_comparison_with_novel_terms(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "results.json"
+            process = subprocess.run(
+                [sys.executable, str(Path(__file__).with_name("benchmark.py")),
+                 "--system", "lambda", "--targets", "3", "--repeats", "1",
+                 "--novel-terms", "1", "--output", str(output)],
+                capture_output=True, text=True, timeout=60, check=True,
+            )
+            report = json.loads(output.read_text(encoding="utf-8"))
+            rejected = subprocess.run(
+                [sys.executable, str(Path(__file__).with_name("benchmark.py")),
+                 "--novel-terms", "1", "--output", str(output)],
+                capture_output=True, text=True, timeout=60,
+            )
+        self.assertIn("Results saved", process.stdout)
+        self.assertEqual(report["configuration"]["novel_terms"], 1)
+        self.assertEqual(report["reference"]["pool_novel"], 1)
+        self.assertEqual(len(report["trials"]), 8)
+        self.assertTrue(any(row["kind"] == "novel" for row in report["trials"]))
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn("--novel-terms", rejected.stderr)
 
     def test_menu_order_arm_is_reproducible_and_audited(self):
         def run_with(menu_order):

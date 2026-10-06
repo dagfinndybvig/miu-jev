@@ -290,11 +290,14 @@ def normal_order_witness(value: str, max_steps: int = 100) -> tuple[list[dict[st
     """Leftmost-outermost reduction. The menu is built in pre-order, so its
     first entry is always the leftmost-outermost redex; normal order therefore
     takes move 0 repeatedly. Returns the applied path and the normal form
-    (None if the budget ran out, meaning the term may not normalize)."""
+    (None if the budget ran out or no in-budget contraction remains, meaning
+    the term may not normalize; neither stop is a proof of divergence)."""
     path: list[dict[str, Any]] = []
     state = describe(value)
     while not state["solved"] and len(path) < max_steps:
-        move = state["moves"][0]
+        move = state["moves"][0] if state["moves"] else None
+        if move is None:
+            break
         path.append({"current": state["current"], "move": move})
         state = describe(move["result"])
     return path, (state["current"] if state["solved"] else None)
